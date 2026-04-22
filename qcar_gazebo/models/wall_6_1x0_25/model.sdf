@@ -1,0 +1,38 @@
+<?xml version='1.0'?>
+<sdf version='1.10'>
+  <model name='wood_wall_long'>
+      <link name='link'>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>model:///wall_6_1x0_25/meshes/wood_wall_short.obj</uri>
+            </mesh>
+          </geometry>
+        </visual>
+        <collision name='collision'>
+          <geometry>
+            <mesh>
+              <uri>model:///wall_6_1x0_25/meshes/wood_wall_short.obj</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>0 -3.0500000000000007 0.125 -2.3322398238967462e-19 1.3561859730864948e-19 0.00080000008533333701</pose>
+      <static>true</static>
+      <self_collide>false</self_collide>
+    </model>
+</sdf>

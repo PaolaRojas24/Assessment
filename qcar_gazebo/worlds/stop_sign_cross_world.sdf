@@ -1,0 +1,911 @@
+<sdf version='1.10'>
+  <world name='empty'>
+    <physics name='1ms' type='ignored'>
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+    <plugin name='gz::sim::systems::Physics' filename='gz-sim-physics-system'/>
+    <plugin name='gz::sim::systems::UserCommands' filename='gz-sim-user-commands-system'/>
+    <plugin name='gz::sim::systems::SceneBroadcaster' filename='gz-sim-scene-broadcaster-system'/>
+    <plugin name='gz::sim::systems::Contact' filename='gz-sim-contact-system'/>
+    <gravity>0 0 -9.8000000000000007</gravity>
+    <magnetic_field>5.5644999999999998e-06 2.2875799999999999e-05 -4.2388400000000002e-05</magnetic_field>
+    <atmosphere type='adiabatic'/>
+    <scene>
+      <ambient>0.400000006 0.400000006 0.400000006 1</ambient>
+      <background>0.699999988 0.699999988 0.699999988 1</background>
+      <shadows>true</shadows>
+    </scene>
+    <model name='ground_plane'>
+      <static>true</static>
+      <link name='link'>
+        <collision name='collision'>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.800000012 0.800000012 0.800000012 1</ambient>
+            <diffuse>0.800000012 0.800000012 0.800000012 1</diffuse>
+            <specular>0.800000012 0.800000012 0.800000012 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>0 0 0 0 0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='qcar_track'>
+      <link name='link'>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>model://track/meshes/qcar_track.obj</uri>
+            </mesh>
+          </geometry>
+          <transparency>0</transparency>
+          <cast_shadows>true</cast_shadows>
+        </visual>
+        <collision name='collision'>
+          <geometry>
+            <mesh>
+              <uri>model://track/meshes/qcar_track.obj</uri>
+            </mesh>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>1</mu>
+                <mu2>1</mu2>
+                <fdir1>0 0 0</fdir1>
+                <slip1>0</slip1>
+                <slip2>0</slip2>
+              </ode>
+              <torsional>
+                <coefficient>1</coefficient>
+                <patch_radius>0</patch_radius>
+                <surface_radius>0</surface_radius>
+                <use_patch_radius>true</use_patch_radius>
+                <ode>
+                  <slip>0</slip>
+                </ode>
+              </torsional>
+            </friction>
+            <bounce>
+              <restitution_coefficient>0</restitution_coefficient>
+              <threshold>1000000</threshold>
+            </bounce>
+            <contact>
+              <collide_without_contact>false</collide_without_contact>
+              <collide_without_contact_bitmask>1</collide_without_contact_bitmask>
+              <collide_bitmask>1</collide_bitmask>
+              <ode>
+                <soft_cfm>0</soft_cfm>
+                <soft_erp>0.20000000000000001</soft_erp>
+                <kp>10000000000000</kp>
+                <kd>1</kd>
+                <max_vel>0.01</max_vel>
+                <min_depth>0</min_depth>
+              </ode>
+              <bullet>
+                <split_impulse>true</split_impulse>
+                <split_impulse_penetration_threshold>-0.01</split_impulse_penetration_threshold>
+                <soft_cfm>0</soft_cfm>
+                <soft_erp>0.20000000000000001</soft_erp>
+                <kp>10000000000000</kp>
+                <kd>1</kd>
+              </bullet>
+            </contact>
+          </surface>
+        </collision>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>-0.0097823431914794805 5.0366217391897193e-05 -0.0012175016232881821 2.5557301690900721e-07 -4.292821525489529e-06 0.001021393554416511</pose>
+      <static>true</static>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='wood_wall_short'>
+      <link name='link'>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>model://wall_4_8x0_25/meshes/wood_wall_short.obj</uri>
+            </mesh>
+          </geometry>
+        </visual>
+        <collision name='collision'>
+          <geometry>
+            <mesh>
+              <uri>model://wall_4_8x0_25/meshes/wood_wall_short.obj</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>0 -3.0500000000000007 0.125 -2.3322400726111823e-19 1.3561861178458716e-19 0.00080000017066670195</pose>
+      <static>true</static>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='wood_wall_short_0'>
+      <link name='link'>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>model://wall_4_8x0_25/meshes/wood_wall_short.obj</uri>
+            </mesh>
+          </geometry>
+        </visual>
+        <collision name='collision'>
+          <geometry>
+            <mesh>
+              <uri>model://wall_4_8x0_25/meshes/wood_wall_short.obj</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>-1.6263032587282567e-19 3.0499999999999994 0.125 5.4161148555624604e-187 1.4164185662348719e-190 0.0005000000416666737</pose>
+      <static>true</static>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='wood_wall_long'>
+      <link name='link'>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>model://wall_6_1x0_25/meshes/wood_wall_long.obj</uri>
+            </mesh>
+          </geometry>
+        </visual>
+        <collision name='collision'>
+          <geometry>
+            <mesh>
+              <uri>model://wall_6_1x0_25/meshes/wood_wall_long.obj</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>2.3999999999999999 4.5159191005957621e-20 0.12499999999999997 0 0 1.5707963270000003</pose>
+      <static>true</static>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='wood_wall_long_0'>
+      <link name='link'>
+        <visual name='visual'>
+          <geometry>
+            <mesh>
+              <uri>model://wall_6_1x0_25/meshes/wood_wall_long.obj</uri>
+            </mesh>
+          </geometry>
+        </visual>
+        <collision name='collision'>
+          <geometry>
+            <mesh>
+              <uri>model://wall_6_1x0_25/meshes/wood_wall_long.obj</uri>
+            </mesh>
+          </geometry>
+        </collision>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>-2.3999999999999999 2.631905855905634e-19 0.12500000000000003 0 0 1.5707963270000003</pose>
+      <static>true</static>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='Sign_board_stand'>
+      <link name='link_0'>
+        <inertial>
+          <mass>1</mass>
+          <pose>0 0.065000000000000002 0 1.57079632679 0 0</pose>
+          <inertia>
+            <ixx>0.0016666700000000001</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.0016666700000000001</iyy>
+            <iyz>0</iyz>
+            <izz>0.0016666700000000001</izz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <pose>0.0012692999999999999 -0.0016329000000000001 -0.096406500000000006 1.5708499999999999 0.0037169999999999001 1.5844800000000003</pose>
+        <gravity>true</gravity>
+        <self_collide>false</self_collide>
+        <kinematic>false</kinematic>
+        <enable_wind>false</enable_wind>
+        <visual name='visual'>
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>model://sign_board_stop/meshes/sign_stand.obj</uri>
+              <scale>0.10000000000000001 0.10000000000000001 0.10000000000000001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <lighting>true</lighting>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Grey</name>
+            </script>
+            <shader type='pixel'/>
+            <emissive>0 0 0 1</emissive>
+          </material>
+          <transparency>0</transparency>
+          <cast_shadows>true</cast_shadows>
+        </visual>
+        <collision name='collision'>
+          <pose>0 0.065000000000000002 0 1.57079632679 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.10000000000000001 0.068000000000000005 0.13</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+      </link>
+      <link name='link_1'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>0.0016666700000000001</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.0016666700000000001</iyy>
+            <iyz>0</iyz>
+            <izz>0.0016666700000000001</izz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <pose>-0.0012698895435157009 0.0016329566509519222 0.096406305696556199 3.1415725289403582 1.5605910505599285 3.1415725223307218</pose>
+        <visual name='visual'>
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>model://sign_board_stop/meshes/sign_board.obj</uri>
+              <scale>0.10000000000000001 0.10000000000000001 0.10000000000000001</scale>
+            </mesh>
+          </geometry>
+          <transparency>0</transparency>
+          <cast_shadows>true</cast_shadows>
+        </visual>
+        <collision name='collision'>
+          <pose>0 0 0.0054999999999999997 -1.5605900019410837 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.13400000000000001 0.010999999999999999 0.14000000000000001</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <enable_wind>false</enable_wind>
+      </link>
+      <joint name='stand_board_J' type='fixed'>
+        <parent>link_0</parent>
+        <child>link_1</child>
+        <pose>1.3877787807814457e-17 0 1.3010426069826053e-17 0 3.8668495452287602e-17 0</pose>
+        <physics>
+          <ode>
+            <limit>
+              <cfm>0</cfm>
+              <erp>0.20000000000000001</erp>
+            </limit>
+            <suspension>
+              <cfm>0</cfm>
+              <erp>0.20000000000000001</erp>
+            </suspension>
+          </ode>
+        </physics>
+      </joint>
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>0.70572067457772236 -0.38254340020651378 0.14855078894572318 0.003871237460377847 -0.0021991264936987911 3.120265482309835</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='Sign_board_stand_0'>
+      <link name='link_0'>
+        <inertial>
+          <mass>1</mass>
+          <pose>0 0.065000000000000002 0 1.57079632679 0 0</pose>
+          <inertia>
+            <ixx>0.0016666700000000001</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.0016666700000000001</iyy>
+            <iyz>0</iyz>
+            <izz>0.0016666700000000001</izz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <pose>0.0012692999999999999 -0.0016329000000000001 -0.096406500000000006 1.5708499999999999 0.0037169999999999001 1.5844800000000003</pose>
+        <gravity>true</gravity>
+        <self_collide>false</self_collide>
+        <kinematic>false</kinematic>
+        <enable_wind>false</enable_wind>
+        <visual name='visual'>
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>model://sign_board_stop/meshes/sign_stand.obj</uri>
+              <scale>0.10000000000000001 0.10000000000000001 0.10000000000000001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <lighting>true</lighting>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Grey</name>
+            </script>
+            <shader type='pixel'/>
+            <emissive>0 0 0 1</emissive>
+          </material>
+          <transparency>0</transparency>
+          <cast_shadows>true</cast_shadows>
+        </visual>
+        <collision name='collision'>
+          <pose>0 0.065000000000000002 0 1.57079632679 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.10000000000000001 0.068000000000000005 0.13</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+      </link>
+      <link name='link_1'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>0.0016666700000000001</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.0016666700000000001</iyy>
+            <iyz>0</iyz>
+            <izz>0.0016666700000000001</izz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <pose>-0.0012694134871953366 0.0016330181952292078 0.096406880688117202 -3.1415704160626499 1.560590043225637 -3.1415704144073482</pose>
+        <visual name='visual'>
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>model://sign_board_stop/meshes/sign_board.obj</uri>
+              <scale>0.10000000000000001 0.10000000000000001 0.10000000000000001</scale>
+            </mesh>
+          </geometry>
+          <transparency>0</transparency>
+          <cast_shadows>true</cast_shadows>
+        </visual>
+        <collision name='collision'>
+          <pose>0 0 0.0054999999999999997 -1.5605900019410837 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.13400000000000001 0.010999999999999999 0.14000000000000001</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <enable_wind>false</enable_wind>
+      </link>
+      <joint name='stand_board_J' type='fixed'>
+        <parent>link_0</parent>
+        <child>link_1</child>
+        <pose>1.3877787807814457e-17 0 1.3010426069826053e-17 0 3.8668495452287602e-17 0</pose>
+        <physics>
+          <ode>
+            <limit>
+              <cfm>0</cfm>
+              <erp>0.20000000000000001</erp>
+            </limit>
+            <suspension>
+              <cfm>0</cfm>
+              <erp>0.20000000000000001</erp>
+            </suspension>
+          </ode>
+        </physics>
+      </joint>
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-0.36721450653727716 -0.084238542769624211 0.15087904393028176 0.0015196711798263478 -0.00015686143382025782 -1.5920985714330387</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='Sign_board_stand_1'>
+      <link name='link_0'>
+        <inertial>
+          <mass>1</mass>
+          <pose>0 0.065000000000000002 0 1.57079632679 0 0</pose>
+          <inertia>
+            <ixx>0.0016666700000000001</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.0016666700000000001</iyy>
+            <iyz>0</iyz>
+            <izz>0.0016666700000000001</izz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <pose>0.0012692999999999999 -0.0016329000000000001 -0.096406500000000006 1.5708499999999999 0.0037169999999999001 1.5844800000000003</pose>
+        <gravity>true</gravity>
+        <self_collide>false</self_collide>
+        <kinematic>false</kinematic>
+        <enable_wind>false</enable_wind>
+        <visual name='visual'>
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>model://sign_board_stop/meshes/sign_stand.obj</uri>
+              <scale>0.10000000000000001 0.10000000000000001 0.10000000000000001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <lighting>true</lighting>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Grey</name>
+            </script>
+            <shader type='pixel'/>
+            <emissive>0 0 0 1</emissive>
+          </material>
+          <transparency>0</transparency>
+          <cast_shadows>true</cast_shadows>
+        </visual>
+        <collision name='collision'>
+          <pose>0 0.065000000000000002 0 1.57079632679 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.10000000000000001 0.068000000000000005 0.13</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+      </link>
+      <link name='link_1'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>0.0016666700000000001</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.0016666700000000001</iyy>
+            <iyz>0</iyz>
+            <izz>0.0016666700000000001</izz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <pose>-0.0012694661022498721 0.0016324929342858008 0.096406837978236987 3.1415011200100835 1.560589857270535 3.1415011112689748</pose>
+        <visual name='visual'>
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>model://sign_board_stop/meshes/sign_board.obj</uri>
+              <scale>0.10000000000000001 0.10000000000000001 0.10000000000000001</scale>
+            </mesh>
+          </geometry>
+          <transparency>0</transparency>
+          <cast_shadows>true</cast_shadows>
+        </visual>
+        <collision name='collision'>
+          <pose>0 0 0.0054999999999999997 -1.5605900019410837 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.13400000000000001 0.010999999999999999 0.14000000000000001</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <enable_wind>false</enable_wind>
+      </link>
+      <joint name='stand_board_J' type='fixed'>
+        <parent>link_0</parent>
+        <child>link_1</child>
+        <pose>1.3877787807814457e-17 0 1.3010426069826053e-17 0 3.8668495452287602e-17 0</pose>
+        <physics>
+          <ode>
+            <limit>
+              <cfm>0</cfm>
+              <erp>0.20000000000000001</erp>
+            </limit>
+            <suspension>
+              <cfm>0</cfm>
+              <erp>0.20000000000000001</erp>
+            </suspension>
+          </ode>
+        </physics>
+      </joint>
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>0.34149416705340446 -1.4407958918137174 0.14946504812500716 0.0059159439664171901 0.00012484871156081574 1.5614214434135714</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='Sign_board_stand_2'>
+      <link name='link_0'>
+        <inertial>
+          <mass>1</mass>
+          <pose>0 0.065000000000000002 0 1.57079632679 0 0</pose>
+          <inertia>
+            <ixx>0.0016666700000000001</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.0016666700000000001</iyy>
+            <iyz>0</iyz>
+            <izz>0.0016666700000000001</izz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <pose>0.0012692999999999999 -0.0016329000000000001 -0.096406500000000006 1.5708499999999999 0.0037169999999999001 1.5844800000000003</pose>
+        <gravity>true</gravity>
+        <self_collide>false</self_collide>
+        <kinematic>false</kinematic>
+        <enable_wind>false</enable_wind>
+        <visual name='visual'>
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>model://sign_board_stop/meshes/sign_stand.obj</uri>
+              <scale>0.10000000000000001 0.10000000000000001 0.10000000000000001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <lighting>true</lighting>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Grey</name>
+            </script>
+            <shader type='pixel'/>
+            <emissive>0 0 0 1</emissive>
+          </material>
+          <transparency>0</transparency>
+          <cast_shadows>true</cast_shadows>
+        </visual>
+        <collision name='collision'>
+          <pose>0 0.065000000000000002 0 1.57079632679 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.10000000000000001 0.068000000000000005 0.13</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+      </link>
+      <link name='link_1'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>0.0016666700000000001</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.0016666700000000001</iyy>
+            <iyz>0</iyz>
+            <izz>0.0016666700000000001</izz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <pose>-0.0012693139225569139 0.0016329081004422541 0.096406908068774139 -3.1415925913316753 1.5605898180234361 -3.1415925901721806</pose>
+        <visual name='visual'>
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>model://sign_board_stop/meshes/sign_board.obj</uri>
+              <scale>0.10000000000000001 0.10000000000000001 0.10000000000000001</scale>
+            </mesh>
+          </geometry>
+          <transparency>0</transparency>
+          <cast_shadows>true</cast_shadows>
+        </visual>
+        <collision name='collision'>
+          <pose>0 0 0.0054999999999999997 -1.5605900019410837 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.13400000000000001 0.010999999999999999 0.14000000000000001</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <enable_wind>false</enable_wind>
+      </link>
+      <joint name='stand_board_J' type='fixed'>
+        <parent>link_0</parent>
+        <child>link_1</child>
+        <pose>1.3877787807814457e-17 0 1.3010426069826053e-17 0 3.8668495452287602e-17 0</pose>
+        <physics>
+          <ode>
+            <limit>
+              <cfm>0</cfm>
+              <erp>0.20000000000000001</erp>
+            </limit>
+            <suspension>
+              <cfm>0</cfm>
+              <erp>0.20000000000000001</erp>
+            </suspension>
+          </ode>
+        </physics>
+      </joint>
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-0.71281015085958299 -1.0706081298032761 0.15174623770231715 0.0036015615437654486 0.0021978917246495812 -0.0038771857502704651</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <model name='Sign_board_stand_3'>
+      <link name='link_0'>
+        <inertial>
+          <mass>1</mass>
+          <pose>0 0.065000000000000002 0 1.57079632679 0 0</pose>
+          <inertia>
+            <ixx>0.0016666700000000001</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.0016666700000000001</iyy>
+            <iyz>0</iyz>
+            <izz>0.0016666700000000001</izz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <pose>0.0012692999999999999 -0.0016329000000000001 -0.096406500000000006 1.5708499999999999 0.0037169999999999001 1.5844800000000003</pose>
+        <gravity>true</gravity>
+        <self_collide>false</self_collide>
+        <kinematic>false</kinematic>
+        <enable_wind>false</enable_wind>
+        <visual name='visual'>
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>model://sign_board_stop/meshes/sign_stand.obj</uri>
+              <scale>0.10000000000000001 0.10000000000000001 0.10000000000000001</scale>
+            </mesh>
+          </geometry>
+          <material>
+            <lighting>true</lighting>
+            <script>
+              <uri>file://media/materials/scripts/gazebo.material</uri>
+              <name>Gazebo/Grey</name>
+            </script>
+            <shader type='pixel'/>
+            <emissive>0 0 0 1</emissive>
+          </material>
+          <transparency>0</transparency>
+          <cast_shadows>true</cast_shadows>
+        </visual>
+        <collision name='collision'>
+          <pose>0 0.065000000000000002 0 1.57079632679 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.10000000000000001 0.068000000000000005 0.13</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+      </link>
+      <link name='link_1'>
+        <inertial>
+          <mass>1</mass>
+          <inertia>
+            <ixx>0.0016666700000000001</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.0016666700000000001</iyy>
+            <iyz>0</iyz>
+            <izz>0.0016666700000000001</izz>
+          </inertia>
+          <pose>0 0 0 0 0 0</pose>
+        </inertial>
+        <pose>-0.0012693999999999761 0.0016329000000008254 0.096406699999999929 3.1415899999999577 1.5605900000000057 3.1415899999999577</pose>
+        <visual name='visual'>
+          <pose>0 0 0 0 0 0</pose>
+          <geometry>
+            <mesh>
+              <uri>model://sign_board_stop/meshes/sign_board.obj</uri>
+              <scale>0.10000000000000001 0.10000000000000001 0.10000000000000001</scale>
+            </mesh>
+          </geometry>
+          <transparency>0</transparency>
+          <cast_shadows>true</cast_shadows>
+        </visual>
+        <collision name='collision'>
+          <pose>0 0 0.0054999999999999997 -1.5605900019410837 0 0</pose>
+          <geometry>
+            <box>
+              <size>0.13400000000000001 0.010999999999999999 0.14000000000000001</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <enable_wind>false</enable_wind>
+      </link>
+      <joint name='stand_board_J' type='fixed'>
+        <parent>link_0</parent>
+        <child>link_1</child>
+        <pose>1.3877787807814457e-17 0 1.3010426069826053e-17 0 3.8668495452287602e-17 0</pose>
+        <physics>
+          <ode>
+            <limit>
+              <cfm>0</cfm>
+              <erp>0.20000000000000001</erp>
+            </limit>
+            <suspension>
+              <cfm>0</cfm>
+              <erp>0.20000000000000001</erp>
+            </suspension>
+          </ode>
+        </physics>
+      </joint>
+      <static>false</static>
+      <allow_auto_disable>true</allow_auto_disable>
+      <pose>-1.5227319361916971 1.9125692450118663 0.15321000060596551 0.0038772838107298596 -0.0022015339895319918 3.1177358664515857</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <light name='sun' type='directional'>
+      <pose>0 0 10 0 0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1</intensity>
+      <direction>-0.5 0.10000000000000001 -0.90000000000000002</direction>
+      <diffuse>0.800000012 0.800000012 0.800000012 1</diffuse>
+      <specular>0.200000003 0.200000003 0.200000003 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <linear>0.0099999997764825821</linear>
+        <constant>0.89999997615814209</constant>
+        <quadratic>0.0010000000474974513</quadratic>
+      </attenuation>
+      <spot>
+        <inner_angle>0</inner_angle>
+        <outer_angle>0</outer_angle>
+        <falloff>0</falloff>
+      </spot>
+    </light>
+  </world>
+</sdf>

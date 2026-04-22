@@ -1,0 +1,189 @@
+<h1 id="a-guide-to-configuring-wsl2-for-using-ros2-on-windows-11">A
+guide to configuring WSL2 for using ROS2 on Windows 11</h1>
+<h2 id="install-windows-terminal">Install Windows Terminal</h2>
+<p>First of all I recommend installing Windows Terminal if you haven’t
+got it already.</p>
+<p><a href="https://aka.ms/terminal">Install Windows Terminal</a></p>
+<h2 id="install-wsl2">Install WSL2</h2>
+<p>Open PowerShell in <strong>administrator</strong> mode by
+right-clicking and selecting <code>Run as administrator</code>, enter
+the following command, wait for the install to finish and then restart
+your machine.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>wsl <span class="op">--</span>install</span></code></pre></div>
+<p>WSL will install the latest long term support version of Ubuntu by
+default, this is exactly what we want for our ROS2 dev environment. If
+it for some reason fails to install Ubuntu then you can install it
+manually with this command:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>wsl <span class="op">--</span>install <span class="op">-</span>d Ubuntu</span></code></pre></div>
+<h2 id="post-install">Post install</h2>
+<p>Open Windows Terminal and click the arrow on the new tab icon and
+open Ubuntu. You will be prompted to choose a UNIX username and
+password.</p>
+<blockquote>
+<p>⚠️ You will not see that you are typing in the terminal when
+inputting your password. This is normal.</p>
+</blockquote>
+<p>When you have made a user you will be moved to your Ubuntu home
+directory. This is indicated in the terminal by
+<code>your-username@your-wsl-machine-name:~</code>, where the tilde
+character <code>~</code> is short for the path to your home folder.</p>
+<p>The next step is to update the Ubuntu installation. You can do that
+by running the following command in the Ubuntu terminal.</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sudo</span> apt update <span class="kw">&amp;&amp;</span> <span class="fu">sudo</span> apt upgrade <span class="at">-y</span></span></code></pre></div>
+<h2 id="enable-gui-applications">Enable GUI Applications</h2>
+<p>To run Linux GUI apps, you should make sure you have the latest GPU
+drivers matching your system. This is needed in order to enable you to
+use a virtual GPU (vGPU) so you can benefit from hardware-accelerated
+OpenGL rendering.</p>
+<ul>
+<li><a
+href="https://www.intel.com/content/www/us/en/download/19344/intel-graphics-windows-dch-drivers.html"><strong>Intel</strong>
+GPU driver</a></li>
+<li><a href="https://www.amd.com/en/support"><strong>AMD</strong> GPU
+driver</a></li>
+<li><a
+href="https://www.nvidia.com/Download/index.aspx?lang=en-us"><strong>NVIDIA</strong>
+GPU driver</a></li>
+</ul>
+<h2 id="wsl2-networking">WSL2 Networking</h2>
+<p>To enable networking that reliably works you need Windows 11 Pro.
+This is because you need the Hyper-V tools in order to create a virtual
+network switch. For Windows 11 Home you can skip this section and use
+the less reliable workaround presented later.</p>
+<h3 id="hyper-v">Hyper-V</h3>
+<p>Let’s check if Hyper-V is enabled. Do that by running this command in
+an administrator PowerShell prompt:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>Get<span class="op">-</span>WindowsOptionalFeature <span class="op">-</span>Online <span class="op">-</span>FeatureName Microsoft<span class="op">-</span>Hyper<span class="op">-</span>V<span class="op">-</span>All</span></code></pre></div>
+<p>If it is disabled, run the following command to enable Hyper-V. After
+it is done installing, restart your computer.</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>Enable<span class="op">-</span>WindowsOptionalFeature <span class="op">-</span>Online <span class="op">-</span>FeatureName Microsoft<span class="op">-</span>Hyper<span class="op">-</span>V <span class="op">-</span>All</span></code></pre></div>
+<h3 id="creating-the-virtual-network-adapter">Creating the Virtual
+Network Adapter</h3>
+<p>After you have Hyper-V installed, we can move on to creating the
+virtual network adapter. Start by running this command (in an
+administrator PowerShell) to get a list of your physical adapters:</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>Get<span class="op">-</span>NetAdapter</span></code></pre></div>
+<p>You need to choose either an Ethernet adapter or WiFi adapter to link
+the virtual switch to. To create the switch, run the following command.
+If you are using an Ethernet adapter, or your WiFi adapter has another
+name, replace <code>"WiFi"</code> with the name you got from the
+previous command:</p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>New<span class="op">-</span>VMSwitch <span class="op">-</span>Name <span class="st">&quot;External Switch&quot;</span> <span class="op">-</span>NetAdapterName <span class="st">&quot;WiFi&quot;</span> <span class="op">-</span>AllowManagementOS <span class="va">$true</span></span></code></pre></div>
+<h2 id="configuring-wsl2">Configuring WSL2</h2>
+<p>Now we will configure WSL2 to use the virtual network adapter we just
+created. We will also configure the amount of RAM and swap space we want
+to make available to WSL2. We will do this by entering this command in
+PowerShell. It will open the configuration file in Notepad:</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>notepad <span class="op">.</span><span class="fu">wslconfig</span></span></code></pre></div>
+<p>If you have 32GB of RAM (or more) you can just replace your config
+file with this:</p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode ini"><code class="sourceCode ini"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">[wsl2]</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="dt">swap</span><span class="ot">=</span><span class="dv">8589934592</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="dt">memory</span><span class="ot">=</span><span class="dv">25769803776</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="dt">networkingMode</span><span class="ot">=</span><span class="st">bridged</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="dt">vmSwitch</span><span class="ot">=</span><span class="st">&quot;External Switch&quot;</span></span></code></pre></div>
+<p>If you have less than 32GB, then you need to replace the memory
+amount with:</p>
+<ul>
+<li><code>memory=12884901888</code> for 16GB (or more)</li>
+<li><code>memory=6442450944</code> for 8GB (or more)</li>
+</ul>
+<blockquote>
+<p>⚠️ You can allocate less, but you will likely encounter issues with
+building large ROS2 packages.</p>
+</blockquote>
+<p>If you have allocated the suggested amount and still encounter
+memory-related issues when building ROS2 packages with
+<code>colcon</code>, you can try increasing the swap amount to:</p>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode ini"><code class="sourceCode ini"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="dt">swap</span><span class="ot">=</span><span class="dv">17179869184</span></span></code></pre></div>
+<h2 id="workaround-for-windows-11-home">Workaround for Windows 11
+Home</h2>
+<p>Since we can’t make a virtual network adapter without Hyper-V, we can
+do the next best thing: mirror the Windows network adapter. This will
+enable the WSL2 installation to communicate with other devices on your
+LAN.</p>
+<p>This is built into WSL2, so the only thing we need to do is enable it
+in the config file:</p>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>notepad <span class="op">.</span><span class="fu">wslconfig</span></span></code></pre></div>
+<p>If you followed the previous step, you should already have stuff in
+your config file. Remove:</p>
+<div class="sourceCode" id="cb12"><pre
+class="sourceCode ini"><code class="sourceCode ini"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="dt">vmSwitch</span><span class="ot">=</span><span class="st">&quot;External Switch&quot;</span></span></code></pre></div>
+<p>Replace:</p>
+<div class="sourceCode" id="cb13"><pre
+class="sourceCode ini"><code class="sourceCode ini"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="dt">networkingMode</span><span class="ot">=</span><span class="st">bridged</span></span></code></pre></div>
+<p>with:</p>
+<div class="sourceCode" id="cb14"><pre
+class="sourceCode ini"><code class="sourceCode ini"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="dt">networkingMode</span><span class="ot">=</span><span class="st">mirrored</span></span></code></pre></div>
+<p>Your config should now look like this:</p>
+<div class="sourceCode" id="cb15"><pre
+class="sourceCode ini"><code class="sourceCode ini"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">[wsl2]</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="dt">swap</span><span class="ot">=</span><span class="st">8589934592  &lt;--- This line is optional</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="dt">memory</span><span class="ot">=</span><span class="st">25769803776  &lt;--- This line is optional</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="dt">networkingMode</span><span class="ot">=</span><span class="st">mirrored</span></span></code></pre></div>
+<p>Next step is to allow inbound connections. This is needed in order to
+be able to detect ROS2 nodes running on other machines. Do it by running
+this command in an administrator PowerShell:</p>
+<div class="sourceCode" id="cb16"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>Set<span class="op">-</span>NetFirewallHyperVVMSetting <span class="op">-</span>Name <span class="st">&#39;{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}&#39;</span> <span class="op">-</span>DefaultInboundAction Allow</span></code></pre></div>
+<h2 id="some-nice-to-haves">Some “Nice to Haves”</h2>
+<p>If you want to open a folder from WSL in windows explorer, you can do
+so by typing <code>explorer .</code></p>
+<p>If you want to seamlessly open your Ubuntu projects in VSCode, follow
+this tutorial to set up VSCode for WSL <a
+href="https://learn.microsoft.com/en-us/windows/wsl/tutorials/wsl-vscode">Get
+started using VS Code with WSL | Microsoft Learn</a></p>
+<h2 id="install-ros2">Install ROS2</h2>
+<p>Now WSL is up and running, the final step is to install ROS2 and
+start testing that everything works. Follow the guide on how to install
+for Ubuntu (deb packages) from the ROS2 documentation. <a
+href="https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html">Ubuntu
+(deb packages) — ROS 2 Documentation: Jazzy documentation</a></p>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<p>If you get issues with the <code>ros2 node list</code> command, it
+could be that the daemon service is not running. This command should fix
+it:</p>
+<div class="sourceCode" id="cb17"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="ex">ros2</span> daemon start</span></code></pre></div>
+<p>If you still have issues detecting nodes on other machines, it is
+likely that the Windows firewall is blocking some of the traffic. Run
+these commands (in an administrator PowerShell) to make exceptions for
+ROS2 ports, and afterwards reboot your machine:</p>
+<div class="sourceCode" id="cb18"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>New<span class="op">-</span>NetFirewallRule <span class="op">-</span>DisplayName <span class="st">&quot;ROS2 UDP 7400-7600&quot;</span> <span class="op">-</span>Direction Inbound <span class="op">-</span>Action Allow <span class="op">-</span>Protocol UDP <span class="op">-</span>LocalPort 7400<span class="op">-</span>7600</span></code></pre></div>
+<div class="sourceCode" id="cb19"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>New<span class="op">-</span>NetFirewallRule <span class="op">-</span>DisplayName <span class="st">&quot;ROS2 UDP 7400-7600 Outbound&quot;</span> <span class="op">-</span>Direction Outbound <span class="op">-</span>Action Allow <span class="op">-</span>Protocol UDP <span class="op">-</span>LocalPort 7400<span class="op">-</span>7600</span></code></pre></div>
+<p>When working locally, sometimes it is more useful to return to the
+original WSL configuration. In the config file</p>
+<div class="sourceCode" id="cb20"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>notepad <span class="op">.</span><span class="fu">wslconfig</span></span></code></pre></div>
+<p>Revert from this</p>
+<div class="sourceCode" id="cb21"><pre
+class="sourceCode ini"><code class="sourceCode ini"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="dt">networkingMode</span><span class="ot">=</span><span class="st">mirrored</span></span></code></pre></div>
+<p>to this:</p>
+<div class="sourceCode" id="cb22"><pre
+class="sourceCode ini"><code class="sourceCode ini"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="dt">networkingMode</span><span class="ot">=</span><span class="st">NAT</span></span></code></pre></div>
+<h2 id="references">References</h2>
+<p><a
+href="https://learn.microsoft.com/en-us/windows/wsl/install">Install
+WSL</a></p>
+<p><a
+href="https://learn.microsoft.com/en-us/windows/wsl/networking">Accessing
+network applications with WSL</a></p>
+<p><a
+href="https://learn.microsoft.com/en-us/windows/wsl/setup/environment#set-up-your-linux-username-and-password">Set
+up a WSL development environment</a></p>
+<p><a
+href="https://learn.microsoft.com/en-us/windows/wsl/tutorials/wsl-vscode">Get
+started using VS Code with WSL</a></p>

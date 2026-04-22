@@ -1,0 +1,15 @@
+material track/Diffuse
+{
+  technique
+  {
+    pass
+    {
+      texture_unit
+      {
+        texture SDCS_MapLayout.png
+        filtering anistropic
+        max_anisotropy 16
+      }
+    }
+  }
+}

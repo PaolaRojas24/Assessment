@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<robot name="QCar" xmlns:xacro="http://www.ros.org/wiki/xacro">
+	<material name="black">
+    <color rgba="0.1 0.1 0.1 1.0"/>
+  </material>
+
+  <material name="blue">
+    <color rgba="0.0 0.0 0.8 1.0"/>
+  </material>
+
+  <material name="green">
+    <color rgba="0.0 0.8 0.0 1.0"/>
+  </material>
+
+  <material name="grey">
+    <color rgba="0.5 0.5 0.5 1.0"/>
+  </material>
+
+  <material name="orange">
+    <color rgba="${255/255} ${108/255} ${10/255} 1.0"/>
+  </material>
+
+  <material name="brown">
+    <color rgba="${222/255} ${207/255} ${195/255} 1.0"/>
+  </material>
+
+  <material name="red">
+    <color rgba="0.8 0.0 0.0 1.0"/>
+  </material>
+
+  <material name="white">
+    <color rgba="1.0 1.0 1.0 1.0"/>
+  </material>
+
+  <xacro:macro name="read_sensor_config_data" params="qcar_sensors_params_file">
+      <!-- Read .yaml files from disk, load content into properties -->
+      <xacro:property name="config_sensors_parameters" value="${xacro.load_yaml(qcar_sensors_params_file)}"/>
+      <!-- Extract subsections from yaml dictionaries -->
+      <xacro:property name="csi_properties" value="${config_sensors_parameters['sensors_parameters']['csi_camera']}"/>
+      <xacro:property name="rgbd_properties" value="${config_sensors_parameters['sensors_parameters']['rgbd_camera']}"/>
+      <xacro:property name="imu_properties" value="${config_sensors_parameters['sensors_parameters']['imu']}"/>
+      <xacro:property name="lidar_properties" value="${config_sensors_parameters['sensors_parameters']['lidar']}"/>
+      <!-- Sensors Properties -->
+      <!-- CSI -->
+      <xacro:property name="csi_update_rate" value="${csi_properties['update_rate']}" scope="parent"/>
+      <xacro:property name="csi_width" value="${csi_properties['image_width']}" scope="parent"/>
+      <xacro:property name="csi_height" value="${csi_properties['image_height']}" scope="parent"/>
+      <xacro:property name="csi_clip_near" value="${csi_properties['clip_near']}" scope="parent"/>
+      <xacro:property name="csi_clip_far" value="${csi_properties['clip_far']}" scope="parent"/>
+      <!-- RGBD -->
+      <xacro:property name="rgb_update_rate" value="${rgbd_properties['rgb_update_rate']}" scope="parent"/>
+      <xacro:property name="depth_update_rate" value="${rgbd_properties['depth_update_rate']}" scope="parent"/>
+      <xacro:property name="rgbd_width" value="${rgbd_properties['image_width']}" scope="parent"/>
+      <xacro:property name="rgbd_height" value="${rgbd_properties['image_height']}" scope="parent"/>
+      <xacro:property name="rgbd_clip_near" value="${rgbd_properties['clip_near']}" scope="parent"/>
+      <xacro:property name="rgbd_clip_far" value="${rgbd_properties['clip_far']}" scope="parent"/>
+      <!-- IMU -->
+      <xacro:property name="imu_update_rate" value="${imu_properties['update_rate']}" scope="parent"/>
+      <!-- LIDAR -->
+      <xacro:property name="lidar_update_rate" value="${lidar_properties['update_rate']}" scope="parent"/>
+      <xacro:property name="lidar_num_points" value="${lidar_properties['num_points']}" scope="parent"/>
+      <xacro:property name="lidar_max_range" value="${lidar_properties['max_range']}" scope="parent"/>
+      <xacro:property name="lidar_min_range" value="${lidar_properties['min_range']}" scope="parent"/>
+
+  </xacro:macro>
+
+</robot>

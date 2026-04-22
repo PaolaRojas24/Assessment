@@ -1,0 +1,13 @@
+# Blender MTL File: 'sign90'
+# Material Count: 1
+
+newmtl sign90
+Ns 500
+Ka 0.8 0.8 0.8
+Kd 0.8 0.8 0.8
+Ks 0.8 0.8 0.8
+d 1
+illum 2
+map_Ka  ../materials/textures/90.png
+map_Kd  ../materials/textures/90.png
+map_Ks  ../materials/textures/90.png

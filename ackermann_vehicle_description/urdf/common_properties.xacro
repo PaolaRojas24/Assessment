@@ -1,0 +1,79 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <material name="blue">
+        <color rgba="0 0 0.5 1" />
+    </material>
+
+    <material name="green">
+        <color rgba="0 0.5 0 1" />
+    </material>
+
+    <material name="grey">
+        <color rgba="0.5 0.5 0.5 1" />
+    </material>
+
+    <material name="black">
+        <color rgba="0.05 0.05 0.05 1" />
+    </material>
+
+    <xacro:macro name="box_inertia" params="m l w h o_xyz o_rpy">
+        <inertial>
+            <origin xyz="${o_xyz}" rpy="${o_rpy}"/>
+            <mass value="${m}"/>
+            <inertia ixx="${m*(w*w + h*h)/12}" ixy="0.0" ixz="0.0" iyy="${m*(l*l + h*h)/12}" iyz="0.0" izz="${m*(w*w + l*l)/12}"/>
+        </inertial>
+    </xacro:macro>
+
+    <xacro:macro name="sphere_inertia" params="m r o_xyz o_rpy">
+        <inertial>
+            <origin xyz="${o_xyz}" rpy="${o_rpy}"/>
+            <mass value="${m}"/>
+            <inertia ixx="${2*m*r*r/5}" ixy="0.0" ixz="0.0" 
+                     iyy="${2*m*r*r/5}" iyz="0.0" 
+                     izz="${2*m*r*r/5}"/>
+        </inertial>
+    </xacro:macro>
+
+    <xacro:macro name="cylinder_inertia" params="m r l o_xyz o_rpy">
+        <inertial>
+            <origin xyz="${o_xyz}" rpy="${o_rpy}"/>
+            <mass value="${m}"/>
+            <inertia ixx="${m*(3*r*r + l*l)/12}" ixy="0.0" ixz="0.0" 
+                     iyy="${m*(3*r*r + l*l)/12}" iyz="0.0" 
+                     izz="${m*r*r/2}"/>
+        </inertial>
+    </xacro:macro>
+
+    <xacro:macro name="get_model_parameters" params="file">
+        
+        <!-- Read .yaml files from disk, load content into properties -->
+        <xacro:property name="parameters" value="${xacro.load_yaml(file)}"/>
+
+        <xacro:property name="base_parameters" value="${parameters['robot_parameters']['base']}" />
+        <xacro:property name="wheel_parameters" value="${parameters['robot_parameters']['wheel']}" />
+        <xacro:property name="steering_parameters" value="${parameters['robot_parameters']['steering']}" />
+
+        <!-- Parameters for the base -->
+        <xacro:property name="base_length" value="${base_parameters['base_length']}" scope="parent"/>
+        <xacro:property name="base_width" value="${base_parameters['base_width']}" scope="parent"/>
+        <xacro:property name="base_height" value="${base_parameters['base_height']}" scope="parent"/>
+        <xacro:property name="base_density" value="${base_parameters['base_density']}" scope="parent"/>
+        <!-- Parameters for the wheels -->
+        <xacro:property name="wheel_radius" value="${wheel_parameters['wheel_radius']}" scope="global"/>
+        <xacro:property name="wheel_width" value="${wheel_parameters['wheel_width']}" scope="parent"/>
+        <xacro:property name="wheel_density" value="${wheel_parameters['wheel_density']}" scope="parent"/>
+        <!-- Parameters for the steering -->
+        <xacro:property name="max_steering_angle" value="${steering_parameters['max_steering_angle']}" scope="global"/>
+        <xacro:property name="max_steering_angular_velocity" value="${steering_parameters['max_steering_angular_velocity']}" scope="parent"/>
+        <xacro:property name="max_velocity" value="${steering_parameters['max_velocity']}" scope="global"/>
+        <xacro:property name="max_effort" value="${steering_parameters['max_effort']}" scope="parent"/>
+        <xacro:property name="max_steering_effort" value="${steering_parameters['max_steering_effort']}" scope="parent"/>
+
+        <xacro:property name="base_mass" value="${base_density * base_length * base_height * base_width}" scope="parent"/>
+        <xacro:property name="wheel_separation" value="${base_width + wheel_width}" scope="global"/>
+        <xacro:property name="wheel_offset" value="${base_length/2 - wheel_radius}" scope="global"/>
+        <xacro:property name="wheel_mass" value="${wheel_density * pi * wheel_radius * wheel_radius * wheel_width}" scope="parent"/>
+        <xacro:property name="max_wheel_angular_velocity" value="${max_velocity / wheel_radius}" scope="parent"/>
+    </xacro:macro>
+
+</robot>
