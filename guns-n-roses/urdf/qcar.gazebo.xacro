@@ -1,0 +1,442 @@
+<?xml version="1.0"?>
+<robot name="QCar" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="qcar_gazebo" params="is_ign sensors_params_file">
+
+    <xacro:read_sensor_config_data qcar_sensors_params_file="${sensors_params_file}"/>
+    <xacro:property name="max_steering_angle" value="0.3"/>
+    <xacro:property name="axle_vel_limit" value="244.8696"/>
+
+    <link name="camera_rgb_optical_link"/>
+    <joint name="camera_rgb_optical_joint" type="fixed">
+      <!-- these values have to be these values otherwise the gazebo camera
+          image won't be aligned properly with the frame it is supposedly
+          originating from -->
+      <origin xyz="0.01 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+      <parent link="camera_rgb"/>
+      <child link="camera_rgb_optical_link"/>
+    </joint>
+
+    <!-- Define all the computer vision sernsor properties -->
+    <gazebo reference="camera_rgb">
+      <!-- <material>Gazebo/Green</material> -->
+      <sensor type="camera" name="intelrealsense_rgb">
+        <always_on>1</always_on>
+        <update_rate>${rgb_update_rate}</update_rate>
+        <visualize>true</visualize>
+        <topic>qcar/rgb/image_raw</topic>
+        <camera name="rgb">
+          <horizontal_fov>1.21126</horizontal_fov>
+          <image>
+              <width>${rgbd_width}</width>
+              <height>${rgbd_height}</height>
+              <format>R8G8B8</format>
+          </image>
+          <clip>
+              <near>${rgbd_clip_near}</near>
+              <far>${rgbd_clip_far}</far>
+          </clip>
+          <noise>
+              <type>gaussian</type>
+              <mean>0.0</mean>
+              <stddev>0.001</stddev>
+          </noise>
+          <distortion>
+            <k1>0.0</k1>
+            <k2>0.0</k2>
+            <k3>0.0</k3>
+            <p1>0.0</p1>
+            <p2>0.0</p2>
+          </distortion>
+          <optical_frame_id>camera_rgb_optical_link</optical_frame_id>
+          <camera_info_topic>qcar/rgb/camera_info</camera_info_topic>
+        </camera>
+      </sensor>
+    </gazebo>
+
+    <link name="camera_csi_front_optical_link"/>
+    <joint name="camera_csi_front_optical_joint" type="fixed">
+      <!-- these values have to be these values otherwise the gazebo camera
+          image won't be aligned properly with the frame it is supposedly
+          originating from -->
+      <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+      <parent link="camera_csi_front"/>
+      <child link="camera_csi_front_optical_link"/>
+    </joint>
+  <!-- Define all the computer vision sernsor properties -->
+    <gazebo reference="camera_csi_front">
+      <!-- <material>Gazebo/Green</material> -->
+      <sensor type="camera" name="csi_front">
+        <always_on>1</always_on>
+        <update_rate>${csi_update_rate}</update_rate>
+        <visualize>true</visualize>
+        <topic>qcar/csi_front/image_raw</topic>
+        <camera name="front">
+          <horizontal_fov>2.79253</horizontal_fov>
+          <image>
+              <width>${csi_width}</width>
+              <height>${csi_height}</height>
+              <format>R8G8B8</format>
+          </image>
+          <clip>
+              <near>${csi_clip_near}</near>
+              <far>${csi_clip_far}</far>
+          </clip>
+          <noise>
+              <type>gaussian</type>
+              <mean>0.0</mean>
+              <stddev>0.001</stddev>
+          </noise>
+          <!-- <distortion>
+            <k1>0.0</k1>
+            <k2>0.0</k2>
+            <k3>0.0</k3>
+            <p1>0.0</p1>
+            <p2>0.0</p2>
+          </distortion> -->
+          <intrinsics>
+            <fx>56.42463383</fx>
+            <fy>138.56406461</fy>
+            <cx>320</cx>
+            <cy>240</cy>
+          </intrinsics>
+          <distortion>
+            <k1>-0.264598808</k1>
+            <k2>0.0156281135</k2>
+            <k3>0.0822019378</k3>
+            <p1>0.0000652954</p1>
+            <p2>0.0053984313</p2>
+          </distortion>
+          <optical_frame_id>camera_csi_front_optical_link</optical_frame_id>
+          <camera_info_topic>qcar/csi_front/camera_info</camera_info_topic>
+        </camera>
+      </sensor>
+    </gazebo>
+
+    <link name="camera_csi_right_optical_link"/>
+    <joint name="camera_csi_right_optical_joint" type="fixed">
+      <!-- these values have to be these values otherwise the gazebo camera
+          image won't be aligned properly with the frame it is supposedly
+          originating from -->
+      <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+      <parent link="camera_csi_right"/>
+      <child link="camera_csi_right_optical_link"/>
+    </joint>
+  <!-- Define all the computer vision sernsor properties -->
+    <gazebo reference="camera_csi_right">
+      <!-- <material>Gazebo/Green</material> -->
+      <sensor type="camera" name="csi_right">
+        <always_on>1</always_on>
+        <update_rate>${csi_update_rate}</update_rate>
+        <visualize>true</visualize>
+        <topic>qcar/csi_right/image_raw</topic>
+        <camera name="right">
+          <horizontal_fov>2.79253</horizontal_fov>
+          <image>
+              <width>${csi_width}</width>
+              <height>${csi_height}</height>
+              <format>R8G8B8</format>
+          </image>
+          <clip>
+              <near>${csi_clip_near}</near>
+              <far>${csi_clip_far}</far>
+          </clip>
+          <noise>
+              <type>gaussian</type>
+              <mean>0.0</mean>
+              <stddev>0.001</stddev>
+          </noise>
+          <distortion>
+            <k1>-0.264598808</k1>
+            <k2>0.0156281135</k2>
+            <k3>0.0822019378</k3>
+            <p1>0.0000652954</p1>
+            <p2>0.0053984313</p2>
+          </distortion>
+          <optical_frame_id>camera_csi_right_optical_link</optical_frame_id>
+          <camera_info_topic>qcar/csi_right/camera_info</camera_info_topic>
+        </camera>
+      </sensor>
+    </gazebo>
+
+    <link name="camera_csi_left_optical_link"/>
+    <joint name="camera_csi_left_optical_joint" type="fixed">
+      <!-- these values have to be these values otherwise the gazebo camera
+          image won't be aligned properly with the frame it is supposedly
+          originating from -->
+      <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+      <parent link="camera_csi_left"/>
+      <child link="camera_csi_left_optical_link"/>
+    </joint>
+  <!-- Define all the computer vision sernsor properties -->
+    <gazebo reference="camera_csi_left">
+      <!-- <material>Gazebo/Green</material> -->
+      <sensor type="camera" name="csi_left">
+        <always_on>1</always_on>
+        <update_rate>${csi_update_rate}</update_rate>
+        <visualize>true</visualize>
+        <topic>qcar/csi_left/image_raw</topic>
+        <camera name="front">
+          <horizontal_fov>2.79253</horizontal_fov>
+          <image>
+              <width>${csi_width}</width>
+              <height>${csi_height}</height>
+              <format>R8G8B8</format>
+          </image>
+          <clip>
+              <near>${csi_clip_near}</near>
+              <far>${csi_clip_far}</far>
+          </clip>
+          <noise>
+              <type>gaussian</type>
+              <mean>0.0</mean>
+              <stddev>0.001</stddev>
+          </noise>
+          <distortion>
+            <k1>-0.264598808</k1>
+            <k2>0.0156281135</k2>
+            <k3>0.0822019378</k3>
+            <p1>0.0000652954</p1>
+            <p2>0.0053984313</p2>
+          </distortion>
+          <optical_frame_id>camera_csi_left_optical_link</optical_frame_id>
+          <camera_info_topic>qcar/csi_left/camera_info</camera_info_topic>
+        </camera>
+      </sensor>
+    </gazebo>
+
+    <link name="camera_csi_back_optical_link"/>
+    <joint name="camera_csi_back_optical_joint" type="fixed">
+      <!-- these values have to be these values otherwise the gazebo camera
+          image won't be aligned properly with the frame it is supposedly
+          originating from -->
+      <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+      <parent link="camera_csi_back"/>
+      <child link="camera_csi_back_optical_link"/>
+    </joint>
+  <!-- Define all the computer vision sernsor properties -->
+    <gazebo reference="camera_csi_back">
+      <!-- <material>Gazebo/Green</material> -->
+      <sensor type="camera" name="csi_back">
+        <always_on>1</always_on>
+        <update_rate>${csi_update_rate}</update_rate>
+        <visualize>true</visualize>
+        <topic>qcar/csi_back/image_raw</topic>
+        <camera name="front">
+          <horizontal_fov>2.79253</horizontal_fov>
+          <image>
+              <width>${csi_width}</width>
+              <height>${csi_height}</height>
+              <format>R8G8B8</format>
+          </image>
+          <clip>
+              <near>${csi_clip_near}</near>
+              <far>${csi_clip_far}</far>
+          </clip>
+          <noise>
+              <type>gaussian</type>
+              <mean>0.0</mean>
+              <stddev>0.001</stddev>
+          </noise>
+          <distortion>
+            <k1>-0.264598808</k1>
+            <k2>0.0156281135</k2>
+            <k3>0.0822019378</k3>
+            <p1>0.0000652954</p1>
+            <p2>0.0053984313</p2>
+          </distortion>
+          <optical_frame_id>camera_csi_back_optical_link</optical_frame_id>
+          <camera_info_topic>qcar/csi_back/camera_info</camera_info_topic>
+        </camera>
+      </sensor>
+    </gazebo>
+
+    <gazebo reference="lidar">
+      <!-- <material>Gazebo/Black</material> -->
+      <sensor type="gpu_lidar" name="rplidar_a2m8">
+        <always_on>true</always_on>
+        <pose>0 0 0.0114 0 0 0</pose>
+        <visualize>true</visualize>
+        <update_rate>${lidar_update_rate}</update_rate>
+        <topic>scan</topic>
+        <gz_frame_id>lidar</gz_frame_id>
+        <ray>
+            <scan>
+                <horizontal>
+                    <samples>${lidar_num_points}</samples>
+                    <resolution>1</resolution>
+                    <!-- <min_angle>-1.570796</min_angle>
+                    <max_angle>1.570796</max_angle> -->
+                    <min_angle>0</min_angle>
+                    <max_angle>6.283185</max_angle>
+                </horizontal>
+            </scan>
+            <range>
+                <min>${lidar_min_range}</min>
+                <max>${lidar_max_range}</max>
+                <resolution>0.01</resolution>
+            </range>
+            <noise>
+                <type>gaussian</type>
+                <!-- Noise parameters based on published spec for Hokuyo laser
+                    achieving "+-30mm" accuracy at range < 10m.  A mean of 0.0m and
+                    stddev of 0.01m will put 99.7% of samples within 0.03m of the true
+                    reading. -->
+                <mean>0.0</mean>
+                <stddev>0.01</stddev>
+            </noise>
+        </ray>
+      </sensor>
+    </gazebo>
+
+    <gazebo reference="imu">
+      <sensor name="imu" type="imu">
+        <always_on>1</always_on>
+        <update_rate>${imu_update_rate}</update_rate>
+        <visualize>true</visualize>
+        <topic>imu</topic>
+        <imu>
+          <orientation_reference_frame>
+            <localization>GRAV_UP</localization>
+          </orientation_reference_frame>
+        </imu>
+      <!-- Sensor |camera,ray,imu,magnetometer,gps,force_torque,contact,sonar,rfidtag,rfid| -->
+      </sensor>
+      
+    </gazebo>
+    
+    <gazebo>
+      <xacro:unless value="${is_ign}">
+        <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+          <topic>joint_states</topic>
+          <joint_name>left_steering_joint</joint_name>
+          <joint_name>right_steering_joint</joint_name>
+          <joint_name>left_front_axle</joint_name>
+          <joint_name>right_front_axle</joint_name>
+          <joint_name>left_rear_axle</joint_name>
+          <joint_name>right_rear_axle</joint_name>
+        </plugin>
+
+        <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+          <parameters>$(find qcar_gazebo)/config/gz_ros2_control.yaml</parameters>
+        </plugin>
+
+        <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+            <render_engine>ogre2</render_engine>
+        </plugin>
+
+        <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
+          <odom_frame>vehicle/odom</odom_frame>
+          <robot_base_frame>base_link</robot_base_frame>
+        </plugin>
+      </xacro:unless>
+
+      <xacro:if value="${is_ign}">
+        <plugin filename="libignition-gazebo-joint-state-publisher-system" name="ignition::gazebo::systems::JointStatePublisher">
+          <topic>joint_states</topic>
+          <joint_name>left_steering_joint</joint_name>
+          <joint_name>right_steering_joint</joint_name>
+          <joint_name>left_front_axle</joint_name>
+          <joint_name>right_front_axle</joint_name>
+          <joint_name>left_rear_axle</joint_name>
+          <joint_name>right_rear_axle</joint_name>
+        </plugin>
+
+        <plugin filename="libign_ros2_control-system.so" name="ign_ros2_control::IgnitionROS2ControlPlugin">
+          <parameters>$(find qcar_gazebo)/config/gz_ros2_control.yaml</parameters>
+        </plugin>
+
+        <plugin filename="libignition-gazebo-sensors-system" name="ignition::gazebo::systems::Sensors">
+            <render_engine>ogre2</render_engine>
+        </plugin>
+
+        <plugin filename="ignition-gazebo-odometry-publisher-system" name="ignition::gazebo::systems::OdometryPublisher">
+          <odom_frame>vehicle/odom</odom_frame>
+          <robot_base_frame>base_link</robot_base_frame>
+        </plugin>
+      </xacro:if>
+    </gazebo>
+
+    <!-- Gazebo Control -->
+    <ros2_control name="control" type="system">
+      <hardware>
+        <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+      </hardware>
+            
+      <joint name="left_steering_joint">
+        <command_interface name="position">
+          <param name="min">${-max_steering_angle}</param>
+          <param name="max">${max_steering_angle}</param>
+        </command_interface>
+
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+        <state_interface name="effort"/>
+      </joint>
+
+      <joint name="right_steering_joint">
+        <command_interface name="position">
+          <param name="min">${-max_steering_angle}</param>
+          <param name="max">${max_steering_angle}</param>
+        </command_interface>
+        
+        <!-- Command this joint -->
+        <!-- <param name="mimic">left_steering_joint</param>  -->
+        <!-- Move in the opposite direction -->
+        <!-- <param name="multiplier">1</param>  -->
+
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+        <state_interface name="effort"/>
+      </joint>
+
+      <joint name="right_front_axle">
+        <param name="mimic">right_rear_axle</param>
+        <param name="multiplier">1</param> 
+        <!-- <command_interface name="velocity">
+          <param name="min">${-axle_vel_limit}</param>
+          <param name="max">${axle_vel_limit}</param>
+        </command_interface> -->
+
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+        <state_interface name="effort"/>
+      </joint>
+
+      <joint name="left_front_axle">
+        <param name="mimic">left_rear_axle</param>
+        <param name="multiplier">1</param> 
+        <!-- <command_interface name="velocity">
+          <param name="min">${-axle_vel_limit}</param>
+          <param name="max">${axle_vel_limit}</param>
+        </command_interface> -->
+
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+        <state_interface name="effort"/>
+      </joint>
+
+      <joint name="right_rear_axle">
+        <command_interface name="velocity">
+          <param name="min">${-axle_vel_limit}</param>
+          <param name="max">${axle_vel_limit}</param>
+        </command_interface>
+
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+        <state_interface name="effort"/>
+      </joint>
+
+      <joint name="left_rear_axle">
+        <command_interface name="velocity">
+          <param name="min">${-axle_vel_limit}</param>
+          <param name="max">${axle_vel_limit}</param>
+        </command_interface>
+
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+        <state_interface name="effort"/>
+      </joint>
+    </ros2_control>
+  </xacro:macro> 
+</robot>

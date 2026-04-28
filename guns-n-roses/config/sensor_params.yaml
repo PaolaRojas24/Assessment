@@ -1,0 +1,28 @@
+sensors_parameters:
+  csi_camera:
+    # csi params
+    update_rate: 30 # Update rate for the camera [Hz]
+    image_width: 640 # Width of the vehicle's base [m]
+    image_height: 480 # Height of the vehicle's base [m]
+    clip_near: 0.02 # Near clipping plane for the camera [m]
+    clip_far: 300.0 # Far clipping plane for the camera [m]
+
+  rgbd_camera:
+    # Wheel params
+    rgb_update_rate: 60 # Update rate for the camera [Hz]
+    depth_update_rate: 90 # Update rate for the camera [Hz]
+    image_width: 640 # Width of the vehicle's base [m]
+    image_height: 480 # Height of the vehicle's base [m]
+    clip_near: 0.02 # Near clipping plane for the camera [m]
+    clip_far: 300.0 # Far clipping plane for the camera [m]
+
+  imu:
+    #imu params
+    update_rate: 60 # Update rate for the IMU [Hz]
+
+  lidar:
+    # lidar params
+    update_rate: 10 # Update rate for the lidar [Hz]
+    num_points: 360 # Number of points per scan
+    max_range: 12.0 # Maximum range of the lidar [m]
+    min_range: 0.2 # Minimum range of the lidar [m]
