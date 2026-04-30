@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>lidar_qcar</name>
+  <version>0.2.0</version>
+  <description>
+    Nodo ROS 2 para suscripción y visualización del sensor LiDAR del QCar físico.
+    Lanza robot_state_publisher + joint_state_publisher para generar el árbol TF
+    completo (base_footprint → base_link → lidar) que RViz necesita.
+  </description>
+
+  <maintainer email="usuario@example.com">Desarrollador</maintainer>
+  <license>MIT</license>
+
+  <!-- Dependencias de runtime del nodo Python -->
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+
+  <!-- TF y modelo del robot -->
+  <depend>tf2_ros</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>joint_state_publisher</depend>
+  <depend>xacro</depend>
+
+  <!-- Descripción del QCar (URDF) -->
+  <depend>qcar_description</depend>
+
+  <!-- Visualización -->
+  <exec_depend>rviz2</exec_depend>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
