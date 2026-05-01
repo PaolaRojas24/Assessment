@@ -39,7 +39,7 @@ Estado:  🟡 En proceso
 
 ## 5. Evidencias
 
-En la Figura 2, se puede observar los datos que envía el Lidar, en este caso correspondiendi a las paredes de la pista
+En la Figura 2, se puede observar los datos que envía el Lidar, en este caso correspondiendo a las paredes de la pista.
 
 <p align="center">
   <img src="https://github.com/PaolaRojas24/Assessment/blob/main/Documentation/Images/rviz_lidar.png"/>
