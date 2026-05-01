@@ -8,6 +8,9 @@ Estado: 🟢 Completado
 * Objetivo: Prueba para conocer como maniobra el qcar. </br>
 Estado:  🟢 Completado 
 
+* Objetivo: Seguimiento de carril. </br>
+Estado:  🟡 En proceso 
+
 ## 2. Logros Técnicos
 
 * Crear un paquete de ROS 2 titulado `lidar_qcar` que permite visualizar en rviz los valores enviados por el sensor lidar del qcar. Esta compuesto por:
