@@ -23,12 +23,12 @@ Estado:  🟡 En proceso
   * `vector3_publisher.py`: Nodo principal que se subscribe al tópico de <em>/qcar/user_command</em> para programar el movimiento del qcar en forma de onda senoidal.
 
 ## 3. Obstáculos y Bloqueos
-* Debido a una diferencia de versiones de Gazebo, la simulación proporcionada no funciona correctamente. La simulación original está preparada para funcionar con Gazebo Harmonic, mientras que la versión que utilizan dos integrantes del equipo es Garden. Como se puede observar en la Figura 1, tanto el rviz como el gazebo se visualizan correctamente, el problema es que no se están enviando los topicos corresponcientes.
+* Debido a una diferencia de versiones de Gazebo, la simulación proporcionada no funciona correctamente. La simulación original está preparada para funcionar con <b>Gazebo Harmonic</b>, mientras que la versión que utilizan dos integrantes del equipo es <b>Gazebo Garden</b>. Como se puede observar en la Figura 1, tanto el rviz como el gazebo se visualizan correctamente, el problema es que no se están enviando los topicos corresponcientes.
 
 <p align="center">
   <img src="https://github.com/PaolaRojas24/Assessment/blob/main/Documentation/Images/gazebo_garden.png"/>
 </p>
-<p align="center"><em>Figura 1. Gazebo Graden </em></p>
+<p align="center"><em><b>Figura 1.</b> Gazebo Graden </em></p>
 
 
 ## 4. Plan para la Siguiente Semana
@@ -44,4 +44,7 @@ En la Figura 2, se puede observar los datos que envía el Lidar, en este caso co
 <p align="center">
   <img src="https://github.com/PaolaRojas24/Assessment/blob/main/Documentation/Images/rviz_lidar.png"/>
 </p>
-<p align="center"><em>Figura 2. Visualización del Lidar en rviz</em></p>
+<p align="center"><em><b>Figura 2.</b> Visualización del Lidar en rviz</em></p>
+
+### Enlaces
+</b>YONATHAN PON ENLACES AQUI</b>
