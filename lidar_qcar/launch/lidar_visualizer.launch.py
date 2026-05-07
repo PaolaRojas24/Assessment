@@ -19,6 +19,19 @@ def generate_launch_description():
         'config', 'lidar_view.rviz'
     )
 
+    static_tf_node = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='lidar_correction_tf',
+        arguments=[
+            '0', '0', '0',      # x y z
+            '1.5708', '0', '0', # roll pitch yaw (+90° en Z)
+            'lidar',            # frame padre (del URDF)
+            'lidar_corrected',  # frame hijo
+        ],
+        output='screen'
+    )
+
     robot_description = ParameterValue(
         Command(['xacro ', urdf_path, ' use_sim:=false']),
         value_type=str
@@ -58,6 +71,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('use_rviz', default_value='true'),
+        static_tf_node,
         rsp_node,
         jsp_node,
         lidar_node,

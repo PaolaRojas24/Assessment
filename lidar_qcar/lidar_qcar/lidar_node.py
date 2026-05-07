@@ -128,6 +128,9 @@ class LidarNode(Node):
         n_total = len(msg.ranges)
         n_valid = len(valid_ranges)
 
+        # Modificar frame_id
+        msg.header.frame_id = 'lidar_corrected'
+
         # Republicar
         self.publisher_scan.publish(msg)
 
