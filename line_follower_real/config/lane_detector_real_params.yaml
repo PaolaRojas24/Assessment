@@ -1,0 +1,52 @@
+lane_detector:
+  ros__parameters:
+    # lane_detector expects sensor_msgs/Image with RELIABLE QoS (its default).
+    # img_converter publishes BEST_EFFORT; image_relay bridges to RELIABLE here.
+    subscribe_topic: /qcar/reliable/csi_front
+    target_point_topic: /lane_target_point_m
+
+    # BEV resolution: pixels per meter.
+    # 3000 (original) warps every frame into a ~1302×312 px image just for the
+    # cv2.imshow preview — very slow.  500 is enough for accurate metric output
+    # because the perspective transform result is divided by this value anyway.
+    bev_pixels_per_meter: 500.0
+
+    # --- BEV calibration ---
+    # These 4 points define the real-world rectangle (meters) that maps to the
+    # image ROI trapezoid below.  Re-calibrate if camera position changes.
+    #
+    # Layout (bird's-eye, front of car = +y):
+    #   [0] near-left   (x=0,         y=0      )
+    #   [1] far-left    (x=0,         y=depth_m)
+    #   [2] far-right   (x=width_m,   y=depth_m)
+    #   [3] near-right  (x=width_m,   y=0      )
+    bev_dst_points_m:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.103908
+      - 0.434
+      - 0.103908
+      - 0.434
+      - 0.0
+
+    # ROI trapezoid in image pixels — adjust to match real camera angle/height.
+    roi_polygon_points_px:
+      - 0.0
+      - 480.0
+      - 210.0
+      - 280.0
+      - 420.0
+      - 280.0
+      - 640.0
+      - 480.0
+
+    # Distance from camera optical centre to rear axle (measure on real car).
+    camera_to_rear_axle_forward_m: 0.323
+    camera_to_rear_axle_lateral_m: 0.0
+
+    lane_half_width_px: 50.0
+    lane_half_width_ema_alpha: 0.2
+
+    # 0.0 = lane centre.  Positive = bias toward left line (up to ~0.9).
+    lane_lateral_bias: 0.25

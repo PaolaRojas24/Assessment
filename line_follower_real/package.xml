@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>line_follower_real</name>
+  <version>0.1.0</version>
+  <description>
+    Launch and configuration package for running the line-following pipeline
+    on the physical QCar. Chains image decompression, lane detection, and
+    Pure Pursuit control into a single launch file targeting /qcar/user_command.
+  </description>
+
+  <maintainer email="xyg122413@gmail.com">xyg</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+
+  <!-- Upstream pipeline nodes -->
+  <exec_depend>vision_helpers_pkg</exec_depend>
+  <exec_depend>control_helpers_pkg</exec_depend>
+  <exec_depend>qcar2_interfaces</exec_depend>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
