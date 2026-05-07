@@ -91,16 +91,17 @@ Visualization Manager:
       Value: true
 
     - Alpha: 1
-      Autocompute Intensity Bounds: true
+      Autocompute Intensity Bounds: false
       Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
+        Max Value: 8.0
+        Min Value: 0.0
+        Value: false
       Axis: Z
       Channel Name: intensity
       Class: rviz_default_plugins/LaserScan
       Color: 255; 50; 0
-      Color Transformer: Intensity
+      Color Transformer: AxisColor
+      Axis: Y
       Decay Time: 0
       Enabled: true
       Invert Rainbow: false
