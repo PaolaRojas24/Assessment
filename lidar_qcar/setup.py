@@ -30,6 +30,7 @@ setup(
     entry_points={
         'console_scripts': [
             'lidar_node = lidar_qcar.lidar_node:main',
+            'control_node = lidar_qcar.control_node:main',
         ],
     },
 )

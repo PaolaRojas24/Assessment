@@ -25,7 +25,7 @@ def generate_launch_description():
         name='lidar_correction_tf',
         arguments=[
             '0', '0', '0',      # x y z
-            '1.5708', '0', '0', # roll pitch yaw (+90° en Z)
+            '1.5708', '0', '0', # roll pitch yaw
             'lidar',            # frame padre (del URDF)
             'lidar_corrected',  # frame hijo
         ],
@@ -61,6 +61,12 @@ def generate_launch_description():
         }]
     )
 
+    control_node = Node(
+        package='lidar_qcar',
+        executable='control_node',
+        output='screen',
+    )
+
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
@@ -75,5 +81,6 @@ def generate_launch_description():
         rsp_node,
         jsp_node,
         lidar_node,
+        control_node,
         rviz_node,
     ])
