@@ -12,7 +12,7 @@ Nodo ROS 2 para el sensor LiDAR del QCar.
 
 Detección de obstáculo
 ----------------------
-Se evalúa un rectángulo frontal de OBS_DEPTH × OBS_WIDTH (m).
+Se debe evaluar un rectángulo que cubra por todos lados al robot de OBS_DEPTH × OBS_WIDTH (m).
 Para cada rayo i con ángulo θ_i:
   - distancia longitudinal  x = r · cos(θ_i)
   - distancia lateral        y = r · sin(θ_i)
@@ -35,7 +35,9 @@ import json
 
 # ── Dimensiones del rectángulo de seguridad ──────────────────────────────────
 OBS_DEPTH = 0.20 * 2  # metros hacia el frente
-OBS_WIDTH = 0.60 * 2 # metros de ancho total (±0.10 a cada lado)
+OBS_WIDTH = 0.60 * 2 # 60
+DEAD_ZONE_DEPTH = 0.1 * 2
+DEAD_ZONE_WIDTH = 0.18 * 2
 
 
 class LidarNode(Node):
@@ -123,15 +125,26 @@ class LidarNode(Node):
 
     # ── Detección de obstáculo ────────────────────────────────────────────────
     def _obstacle_in_rect(self, msg: LaserScan) -> bool:
-        """Devuelve True si algún punto válido cae dentro del rectángulo
-        frontal OBS_DEPTH × OBS_WIDTH centrado en el eje del robot."""
+        """Devuelve True si algún punto válido cae dentro del rectángulo que envuelve al robot OBS_DEPTH × OBS_WIDTH centrado en el centro."""
         half_width = OBS_WIDTH / 2.0
+        half_depth = OBS_DEPTH / 2.0
         angle = msg.angle_min
         for r in msg.ranges:
+            
             if math.isfinite(r) and msg.range_min <= r <= msg.range_max:
-                x = r * math.cos(angle)   # profundidad (hacia el frente)
-                y = r * math.sin(angle)   # desplazamiento lateral
-                if 0.0 < x <= OBS_DEPTH and abs(y) <= half_width:
+                x = r * math.cos(angle)
+                y = r * math.sin(angle)
+
+                inside_dead_zone = (
+                    abs(x) <= DEAD_ZONE_DEPTH / 2.0 and
+                    abs(y) <= DEAD_ZONE_WIDTH / 2.0
+                )
+
+                if inside_dead_zone:
+                    angle += msg.angle_increment
+                    continue
+
+                if abs(x) <= half_depth and abs(y) <= half_width: #EL ERROR DE POSICIÓN DESPLAZADA ESTÁ EN ESTA LÍNEA Y ESTÁ ASOCIADO con "X"
                     return True
             angle += msg.angle_increment
         return False
@@ -218,7 +231,7 @@ class LidarNode(Node):
         m.type = Marker.CUBE
         m.action = Marker.ADD
 
-        # Centrar el cubo: x va de 0 a OBS_DEPTH → centro en OBS_DEPTH/2
+        # Centrar el cubo en el origen
         m.pose.position.x = 0.0
         m.pose.position.y = 0.0
         m.pose.position.z = 0.0
@@ -236,6 +249,27 @@ class LidarNode(Node):
 
         m.lifetime.sec = 0       # 0 = persiste hasta nueva publicación
         self.publisher_marker.publish(m)
+
+        m_dead = Marker()
+        m_dead.header.frame_id = 'lidar_corrected'
+        m_dead.header.stamp = stamp
+        m_dead.ns = 'dead_zone'
+        m_dead.id = 1
+        m_dead.type = Marker.CUBE
+        m_dead.action = Marker.ADD
+
+        m_dead.scale.x = DEAD_ZONE_DEPTH
+        m_dead.scale.y = DEAD_ZONE_WIDTH
+        m_dead.scale.z = 0.05
+        m_dead.pose.orientation.w = 1.0
+
+        m_dead.color.r = 0.0 
+        m_dead.color.g = 0.0
+        m_dead.color.b = 1.0
+        m_dead.color.a = 0.35
+
+        m_dead.lifetime.sec = 0 
+        self.publisher_marker.publish(m_dead)
 
 
 def main(args=None):
