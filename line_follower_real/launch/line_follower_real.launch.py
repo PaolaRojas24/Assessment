@@ -112,6 +112,12 @@ def generate_launch_description():
         output='log',
     )
 
+    topic_hz_keepalive_2 = ExecuteProcess(
+        cmd=['ros2', 'topic', 'hz', '/qcar/reliable/csi_front'],
+        name='topic_hz_keepalive_2',
+        output='log',
+    )
+
     return LaunchDescription([
         detector_params_arg,
         follower_params_arg,
@@ -120,4 +126,5 @@ def generate_launch_description():
         lane_detector_node,
         lane_follower_node,
         topic_hz_keepalive,
+        topic_hz_keepalive_2,
     ])
