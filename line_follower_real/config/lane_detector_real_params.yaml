@@ -30,16 +30,19 @@ lane_detector:
       - 0.434
       - 0.0
 
-    # ROI trapezoid in image pixels — adjust to match real camera angle/height.
+    # ROI trapezoid in image pixels — defined for the real camera (820x410).
+    # Order: bottom-left, top-left, top-right, bottom-right.
+    # Scaled from the original sim values (640x480) by (1.28125, 0.854).
+    # Fine-tune by watching the yellow trapezoid overlay in the Detections window.
     roi_polygon_points_px:
-      - 0.0
-      - 480.0
-      - 210.0
-      - 280.0
-      - 420.0
-      - 280.0
-      - 640.0
-      - 480.0
+      - 0.0       # bottom-left  x
+      - 410.0     # bottom-left  y
+      - 269.0     # top-left     x
+      - 239.0     # top-left     y
+      - 538.0     # top-right    x
+      - 239.0     # top-right    y
+      - 820.0     # bottom-right x
+      - 410.0     # bottom-right y
 
     # Distance from camera optical centre to rear axle (measure on real car).
     camera_to_rear_axle_forward_m: 0.323
