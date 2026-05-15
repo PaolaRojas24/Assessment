@@ -1,11 +1,11 @@
-# Team: Guns-n-ROSes - Reporte de Estatus - Semana 1
+# Team: Guns-n-ROSes - Reporte de Estatus - Semana 2
 
 ## 1. Hito de la Semana 
 
-* Objetivo: Visualización de los datos del sensor lidar del qcar en rviz </br>
+* Objetivo: Detección de obstáculos con el sensor LiDAR dentro de una zona de seguridad configurable </br>
 Estado: 🟢 Completado
 
-* Objetivo: Prueba para conocer como maniobra el qcar. </br>
+* Objetivo: Frenado automático del QCar al detectar un obstáculo en la zona de seguridad. </br>
 Estado:  🟢 Completado 
 
 * Objetivo: Seguimiento de carril. </br>
@@ -13,44 +13,40 @@ Estado:  🟡 En proceso
 
 ## 2. Logros Técnicos
 
-* Crear un paquete de ROS 2 titulado `lidar_qcar` que permite visualizar en rviz los valores enviados por el sensor lidar del qcar. Esta compuesto por:
-  * `lidar_visualizer.launch.py`: Launcher que permite lanzar el nodo del lidar y el nodo de rviz
-  * `lidar_view.rviz`: Archivo que configura el rviz para una mejor visualización.
-  * `lidar_node.py`: Nuestro nodo principal, se subscribe a el tópico de <em>/qcar/scan</em> para recibir los datos del Lidar del qcar
+* Se amplió el paquete de ROS 2 `lidar_qcar` para incorporar lógica de detección de obstáculos y control reactivo del QCar. Los nuevos componentes son:
+  * `control_node.py`: Nodo que se suscribe al tópico <em>/qcar/obstacle_detected</em> y publica comandos de velocidad en <em>/qcar/user_command</em>. Cuando se detecta un obstáculo, envía velocidad cero deteniendo el robot; cuando la zona queda despejada, retoma la marcha hacia adelante.
+  * `lidar_control.launch.py`: Launcher que levanta en conjunto el `lidar_node`, el `control_node`, el `robot_state_publisher`, el `joint_state_publisher`, un transformador estático TF y RViz2.
 
 
-* Crear un paquete de ROS 2 titulado `vector3_teleop` que permite conocer como maniobra el qcar. Esta compuesto por:
-  * `vector3_publisher.py`: Nodo principal que se subscribe al tópico de <em>/qcar/user_command</em> para programar el movimiento del qcar en forma de onda senoidal.
+* Se añadió lógica de zona de seguridad rectangular al lidar_node.py. La detección evalúa cada rayo del LiDAR con la siguiente geometría:
+  * <b>Zona activa</b>: si un punto válido cae dentro de este rectángulo centrado en el robot, se publica True en <em>/qcar/obstacle_detected</em>.
+  * <b>Dead zone</b>: región interior alrededor del robot que se ignora, evitando falsas detecciones causadas por partes del propio chasis.
+
+
+* La zona de seguridad se visualiza en tiempo real en RViz2 mediante un marcador tipo CUBE publicado en <em>/qcar/safety_zone</em>: el rectángulo cambia de color verde (libre) a rojo (obstáculo detectado) y la dead zone se muestra en azul.
 
 ## 3. Obstáculos y Bloqueos
-* Debido a una diferencia de versiones de Gazebo, la simulación proporcionada no funciona correctamente. La simulación original está preparada para funcionar con <b>Gazebo Harmonic</b>, mientras que la versión que utilizan dos integrantes del equipo es <b>Gazebo Garden</b>. Como se puede observar en la Figura 1, tanto el rviz como el gazebo se visualizan correctamente, el problema es que no se están enviando los tópicos correspondientes.
-
-<p align="center">
-  <img src="https://github.com/PaolaRojas24/Assessment/blob/main/Documentation/Images/gazebo_garden.png"/>
-</p>
-<p align="center"><em><b>Figura 1.</b> Gazebo Garden </em></p>
-
+* La alta latencia de la cámara del QCar dificulta el desarrollo de un seguidor de carril en tiempo real. El retardo en la recepción de los fotogramas impide una respuesta de control suficientemente rápida, por lo que este objetivo se mantiene bloqueado hasta encontrar una estrategia que mitigue el problema de latencia.
 
 ## 4. Plan para la Siguiente Semana
 
-* Seguir trabajando con el robot qcar en físico.
-* Trabajar con la cámara del qcar para obtener los primeros resultados
-* Programar Lidar y Cámara para detección de objetos.
+* Retomar el desarrollo del seguidor de carril una vez mitigada la latencia.
+* Empezar a implementar la lógica de rebasar objetos con el Lidar.
 
 ## 5. Evidencias
 
-En la Figura 2, se puede observar los datos que envía el Lidar, en este caso correspondiendo a las paredes de la pista.
+En la Figura 1, se puede observar la zona activa (rectángulo verde) y la dead zone (rectángulo azul).
 
 <p align="center">
-  <img src="https://github.com/PaolaRojas24/Assessment/blob/main/Documentation/Images/rviz_lidar.png"/>
+  <img src="https://github.com/PaolaRojas24/Assessment/blob/main/Documentation/Images/lidar_green.png"/>
 </p>
-<p align="center"><em><b>Figura 2.</b> Visualización del Lidar en rviz</em></p>
+<p align="center"><em><b>Figura 2.</b> Visualización de zona activa y dead zobe en Rviz</em></p>
+
+En la Figura 2, se puede observar como el rectángulo se vuelve rojo cuando el lidar detecta un objeto dentro de la zona activa.
+
+<p align="center">
+  <img src="https://github.com/PaolaRojas24/Assessment/blob/main/Documentation/Images/lidar_red.png"/>
+</p>
+<p align="center"><em><b>Figura 2.</b> Visualización de obstáculos en Rviz</em></p>
 
 ### Enlaces
-
-* Paquete [`lidar_qcar`](https://github.com/PaolaRojas24/Assessment/tree/ddc92c0/lidar_qcar):
-  * [`lidar_node.py`](https://github.com/PaolaRojas24/Assessment/blob/ddc92c0/lidar_qcar/lidar_qcar/lidar_node.py)
-  * [`lidar_visualizer.launch.py`](https://github.com/PaolaRojas24/Assessment/blob/ddc92c0/lidar_qcar/launch/lidar_visualizer.launch.py)
-  * [`lidar_view.rviz`](https://github.com/PaolaRojas24/Assessment/blob/ddc92c0/lidar_qcar/config/lidar_view.rviz)
-* Paquete [`vector3_teleop`](https://github.com/PaolaRojas24/Assessment/tree/ddc92c0/vector3_teleop):
-  * [`vector3_publisher.py`](https://github.com/PaolaRojas24/Assessment/blob/ddc92c0/vector3_teleop/vector3_teleop/vector3_publisher.py)
