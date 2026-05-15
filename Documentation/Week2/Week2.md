@@ -2,7 +2,7 @@
 
 ## 1. Hito de la Semana 
 
-* Objetivo: Detección de obstáculos con el sensor LiDAR dentro de una zona de seguridad configurable </br>
+* Objetivo: Detección de obstáculos con el sensor LiDAR dentro de una zona de seguridad configurable en entorno fisico </br>
 Estado: 🟢 Completado
 
 * Objetivo: Frenado automático del QCar al detectar un obstáculo en la zona de seguridad. </br>
@@ -50,3 +50,6 @@ En la Figura 2, se puede observar como el rectángulo se vuelve rojo cuando el l
 <p align="center"><em><b>Figura 2.</b> Visualización de obstáculos en Rviz</em></p>
 
 ### Enlaces
+
+* [control_node.py](https://github.com/PaolaRojas24/Assessment/blob/dd36cc6/lidar_qcar/lidar_qcar/control_node.py) (commit `dd36cc6`)
+* [lidar_control.launch.py](https://github.com/PaolaRojas24/Assessment/blob/dd36cc6/lidar_qcar/launch/lidar_control.launch.py) (commit `dd36cc6`)
