@@ -61,6 +61,12 @@ def generate_launch_description():
         }]
     )
 
+    control_node = Node(
+        package='lidar_qcar',
+        executable='control_node',
+        output='screen',
+    )
+
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
@@ -75,5 +81,6 @@ def generate_launch_description():
         rsp_node,
         jsp_node,
         lidar_node,
+        control_node,
         rviz_node,
     ])
