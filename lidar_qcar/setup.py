@@ -31,6 +31,7 @@ setup(
         'console_scripts': [
             'lidar_node = lidar_qcar.lidar_node:main',
             'control_node = lidar_qcar.control_node:main',
+            'move_node = lidar_qcar.move_node:main',
         ],
     },
 )
