@@ -26,6 +26,9 @@ setup(
     entry_points={
         'console_scripts': [
             'image_relay = line_follower_real.image_relay:main',
+            'image_converter_fast = line_follower_real.image_converter_fast:main',
+            'lane_detector_fast = line_follower_real.lane_detector_fast:main',
+            'dashboard = line_follower_real.dashboard:main',
         ],
     },
 )
