@@ -7,9 +7,11 @@ lane_follower_q:
 
     # --- Topics ---
     target_point_topic: /lane_target_point_m
-    # KEY DIFFERENCE vs Gazebo: real hardware listens on /qcar/user_command,
-    # NOT /qcar_sim/user_command.
-    cmd_topic: /qcar/user_command
+    # The lane follower no longer publishes /qcar/user_command directly --
+    # safety_mux does. The follower puts its raw commands on this topic and
+    # the mux gates them on /qcar/obstacle_detected and /qcar/safe_stop_active
+    # before forwarding to the hardware.
+    cmd_topic: /lane_follower/raw_cmd
 
     # --- Ackermann geometry ---
     wheelbase: 0.256   # meters (distance between axles)

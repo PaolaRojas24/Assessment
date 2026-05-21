@@ -1,13 +1,13 @@
-from setuptools import find_packages, setup
 import os
 from glob import glob
+from setuptools import setup
 
-package_name = 'line_follower_real'
+package_name = 'qcar_control'
 
 setup(
     name=package_name,
     version='0.1.0',
-    packages=find_packages(exclude=['test']),
+    packages=[package_name],
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -21,14 +21,11 @@ setup(
     zip_safe=True,
     maintainer='xyg',
     maintainer_email='xyg122413@gmail.com',
-    description='Line follower launch and config for the physical QCar',
+    description='QCar control: command_mux + lane_follower bringup.',
     license='MIT',
     entry_points={
         'console_scripts': [
-            'image_relay = line_follower_real.image_relay:main',
-            'image_converter_fast = line_follower_real.image_converter_fast:main',
-            'lane_detector_fast = line_follower_real.lane_detector_fast:main',
-            'dashboard = line_follower_real.dashboard:main',
+            'command_mux = qcar_control.command_mux:main',
         ],
     },
 )

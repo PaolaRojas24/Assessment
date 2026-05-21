@@ -447,7 +447,14 @@ class LaneDetectorFast(Node):
                 )
                 if bev_image is not None:
                     self._publish_image(self.bev_pub, bev_image)
-                self._publish_image(self.mask_pub, color_mask)
+                # Resize the mask to overlay_size too. Native 820x410x3 = ~1 MB
+                # per frame; at 15 Hz that's ~15 MB/s of local DDS traffic on
+                # one topic, which is enough to backpressure the publisher and
+                # stall the whole listener_callback. Downstream consumers
+                # (dashboard, hz keepalive) only need it at display resolution.
+                self._publish_image(
+                    self.mask_pub, color_mask, resize_to=self.overlay_size
+                )
 
             if self.enable_display:
                 cv2.imshow("Detections", line_image)

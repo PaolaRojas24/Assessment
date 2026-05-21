@@ -1,13 +1,13 @@
 import os
 from glob import glob
-from setuptools import find_packages, setup
+from setuptools import setup
 
-package_name = 'vector3_teleop'
+package_name = 'qcar_pyqt_dashboard'
 
 setup(
     name=package_name,
     version='0.1.0',
-    packages=find_packages(exclude=['test']),
+    packages=[package_name],
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -19,16 +19,11 @@ setup(
     zip_safe=True,
     maintainer='xyg',
     maintainer_email='xyg122413@gmail.com',
-    description='Terminal keyboard teleop for the QCar. Publishes Vector3Stamped to /teleop/cmd.',
+    description='PyQt5 dashboard for the QCar (test alongside the OpenCV one).',
     license='MIT',
-    extras_require={
-        'test': [
-            'pytest',
-        ],
-    },
     entry_points={
         'console_scripts': [
-            'keyboard_teleop = vector3_teleop.keyboard_teleop:main',
+            'dashboard = qcar_pyqt_dashboard.dashboard:main',
         ],
     },
 )
