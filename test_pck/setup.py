@@ -2,7 +2,7 @@ import os
 from glob import glob
 from setuptools import find_packages, setup
 
-package_name = 'vector3_teleop'
+package_name = 'test_pck'
 
 setup(
     name=package_name,
@@ -19,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer='xyg',
     maintainer_email='xyg122413@gmail.com',
-    description='Terminal keyboard teleop for the QCar. Publishes Vector3Stamped to /teleop/cmd.',
+    description='Test or calibration nodes',
     license='MIT',
     extras_require={
         'test': [
@@ -28,7 +28,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'keyboard_teleop = vector3_teleop.keyboard_teleop:main',
+            'test_userCommand = test_pck.test_control:main',
+            'lap_recorder = test_pck.lap_recorder:main',
         ],
     },
 )

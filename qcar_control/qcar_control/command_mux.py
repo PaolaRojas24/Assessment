@@ -8,10 +8,9 @@ flags and an explicit mode.
 
 Inputs:
   /lane_follower/raw_cmd       Vector3Stamped   the autonomous controller
-  /teleop/cmd                  Vector3Stamped   the manual teleop
   /qcar/obstacle_detected      Bool             lidar safety stop
   /qcar/safe_stop_active       Bool             dashboard safe-stop button
-  /qcar/control_mode           String           one of "auto" / "manual" / "off"
+  /qcar/control_mode           String           one of "auto" / "off"
 
 Output:
   /qcar/user_command           Vector3Stamped   the QCar hardware driver
@@ -20,8 +19,7 @@ Rules (highest priority first):
   1. obstacle_detected   -> publish (0, 0)
   2. safe_stop_active    -> publish (0, 0)
   3. mode == "off"       -> publish (0, 0)
-  4. mode == "manual"    -> forward latest /teleop/cmd (or (0,0) if none yet)
-  5. mode == "auto"      -> forward latest /lane_follower/raw_cmd (or (0,0))
+  4. mode == "auto"      -> forward latest /lane_follower/raw_cmd (or (0,0))
 
 The mode is sticky -- it only changes when a new message arrives on
 /qcar/control_mode. Default at startup is "auto".
@@ -36,7 +34,7 @@ from geometry_msgs.msg import Vector3Stamped
 from std_msgs.msg import Bool, String
 
 
-VALID_MODES = ('auto', 'manual', 'off')
+VALID_MODES = ('auto', 'off')
 
 
 class CommandMux(Node):
@@ -44,7 +42,6 @@ class CommandMux(Node):
         super().__init__('command_mux')
 
         self.declare_parameter('auto_in_topic',     '/lane_follower/raw_cmd')
-        self.declare_parameter('manual_in_topic',   '/teleop/cmd')
         self.declare_parameter('cmd_out_topic',     '/qcar/user_command')
         self.declare_parameter('obstacle_topic',    '/qcar/obstacle_detected')
         self.declare_parameter('safe_stop_topic',   '/qcar/safe_stop_active')
@@ -53,7 +50,6 @@ class CommandMux(Node):
         self.declare_parameter('initial_mode',      'auto')
 
         auto_in   = self.get_parameter('auto_in_topic').value
-        manual_in = self.get_parameter('manual_in_topic').value
         cmd_out   = self.get_parameter('cmd_out_topic').value
         obs_top   = self.get_parameter('obstacle_topic').value
         ss_top    = self.get_parameter('safe_stop_topic').value
@@ -69,12 +65,10 @@ class CommandMux(Node):
         self._mode = init_mode
 
         self._latest_auto_cmd = None
-        self._latest_manual_cmd = None
         self._obstacle = False
         self._safe_stop = False
 
         self.create_subscription(Vector3Stamped, auto_in,   self._on_auto,   10)
-        self.create_subscription(Vector3Stamped, manual_in, self._on_manual, 10)
         self.create_subscription(Bool,           obs_top,   self._on_obstacle, 10)
         self.create_subscription(Bool,           ss_top,    self._on_safe_stop, 10)
         self.create_subscription(String,         mode_top,  self._on_mode,   10)
@@ -85,7 +79,6 @@ class CommandMux(Node):
         self.get_logger().info(
             f'command_mux ready\n'
             f'  auto in : {auto_in}\n'
-            f'  manual in: {manual_in}\n'
             f'  out     : {cmd_out} @ {rate_hz:.0f} Hz\n'
             f'  mode    : {self._mode}  (publish String to {mode_top} to change)\n'
         )
@@ -93,9 +86,6 @@ class CommandMux(Node):
     # ── callbacks ──────────────────────────────────────────────────────────
     def _on_auto(self, msg: Vector3Stamped):
         self._latest_auto_cmd = msg
-
-    def _on_manual(self, msg: Vector3Stamped):
-        self._latest_manual_cmd = msg
 
     def _on_obstacle(self, msg: Bool):
         was = self._obstacle
@@ -147,12 +137,8 @@ class CommandMux(Node):
             self.pub.publish(out)
             return
 
-        # 3. mode-selected source
-        if self._mode == 'manual':
-            src = self._latest_manual_cmd
-        else:  # 'auto'
-            src = self._latest_auto_cmd
-
+        # 3. forward the latest autonomous command
+        src = self._latest_auto_cmd
         if src is None:
             # No upstream command yet -- emit a zero so the QCar doesn't drift.
             out.vector.x = 0.0

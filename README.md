@@ -19,7 +19,6 @@ Camera image
 |------|---------|------|
 | `lane_detector` | `vision_helpers_pkg` | Detects lane lines from camera and publishes a target waypoint in meters (rear-axle frame) |
 | `lane_follower_q` | `control_helpers_pkg` | Pure Pursuit controller that converts the target point into throttle + steering commands |
-| `vector3_publisher` | `vector3_teleop` | Manual teleoperation publisher (sinusoidal test drive) |
 
 ---
 
@@ -53,17 +52,6 @@ Pure Pursuit lane follower:
 
 **Published topics:**
 - `/qcar_sim/user_command` or `/qcar/user_command` (platform-dependent)
-
-### `vector3_teleop`
-Simple teleop node for manual testing. Publishes a sinusoidal steering pattern at 10 Hz.
-
-```bash
-# Real QCar
-ros2 run vector3_teleop publisher
-
-# Simulated QCar
-ros2 run vector3_teleop publisher --ros-args -p is_sim:=true
-```
 
 ---
 

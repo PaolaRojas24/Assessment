@@ -3,8 +3,8 @@ Control-only launch: lane_follower_q (autonomous) + command_mux.
 
 Both source nodes that drive the QCar live here. The autonomous
 lane_follower_q reads /lane_target_point_m and publishes
-/lane_follower/raw_cmd; the mux then arbitrates between that, the
-optional /teleop/cmd, and the safety flags to produce /qcar/user_command.
+/lane_follower/raw_cmd; the mux then arbitrates between that and the
+safety flags to produce /qcar/user_command.
 """
 
 import os
