@@ -5,8 +5,12 @@ Brings up everything in dependency order:
   - lidar_qcar/lidar_node            -- /qcar/scan -> /qcar/obstacle_detected
   - qcar_lane_perception             -- /qcar/csi_front -> overlay/BEV/mask + target
   - qcar_control                     -- lane_follower + command_mux
+  - qcar_odom_viz                    -- /odom -> /odom_path + RViz2 (visualizacion)
   - keepalives for /qcar/scan, /qcar/stateBattery, /qcar/obstacle_detected, /qcar/safe_stop_active
   - qcar_opencv_dashboard (optional, default on)
+
+Required on the QCar side (paquete qcar_odom desplegado en el carro):
+    ros2 launch qcar_odom qcar_odom.launch.py
 
 Required on the QCar side (separate machine):
     ros2 launch ROSes_pkg qcar_red_lf.launch.py nodes:='csi_lf,qcar,lidar_qos'
@@ -30,6 +34,7 @@ def generate_launch_description():
     perception_pkg = get_package_share_directory('qcar_lane_perception')
     control_pkg    = get_package_share_directory('qcar_control')
     opencv_pkg     = get_package_share_directory('qcar_opencv_dashboard')
+    odom_viz_pkg   = get_package_share_directory('qcar_odom_viz')
 
     dashboard_arg = DeclareLaunchArgument(
         'dashboard', default_value='true',
@@ -58,6 +63,11 @@ def generate_launch_description():
             os.path.join(opencv_pkg, 'launch', 'dashboard.launch.py')
         ),
         condition=IfCondition(LaunchConfiguration('dashboard')),
+    )
+    odom_viz = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(odom_viz_pkg, 'launch', 'qcar_odom_viz.launch.py')
+        ),
     )
 
     lidar_node = Node(
@@ -88,6 +98,7 @@ def generate_launch_description():
         perception,
         lidar_node,
         control,
+        odom_viz,
         *keepalives,
         dashboard,
     ])

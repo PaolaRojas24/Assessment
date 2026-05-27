@@ -1,26 +1,19 @@
 lane_follower_q:
   ros__parameters:
     # --- Platform ---
-    # "qcar" publishes Vector3Stamped (x=throttle, y=steering).
-    # The physical QCar hardware driver reads /qcar/user_command directly.
     platform: qcar
 
     # --- Topics ---
     target_point_topic: /lane_target_point_m
-    # The lane follower no longer publishes /qcar/user_command directly --
-    # safety_mux does. The follower puts its raw commands on this topic and
-    # the mux gates them on /qcar/obstacle_detected and /qcar/safe_stop_active
-    # before forwarding to the hardware.
     cmd_topic: /lane_follower/raw_cmd
 
     # --- Ackermann geometry ---
     wheelbase: 0.256   # meters (distance between axles)
 
     # --- Dynamic lookahead ---
-    # Ld = clamp(lookahead_base + lookahead_speed_gain * |v|, min, max)
-    lookahead_min: 0.16
-    lookahead_max: 0.34
-    lookahead_base: 0.20
+    lookahead_min: 0.26
+    lookahead_max: 0.50
+    lookahead_base: 0.30
     lookahead_speed_gain: 0.80
 
     # --- Steering limits ---
@@ -28,12 +21,8 @@ lane_follower_q:
     curve_threshold: 0.20      # radians — above this = curve speed
 
     # --- Speed ---
-    # Reduced for safe first-run testing.  Stall floor on this car is ~0.030-0.035,
-    # so both values stay clearly above it.  Curve speed is slightly lower than
-    # straight; raise it if the car stalls in tight turns, lower straight if it
-    # overshoots the line.
-    speed_straight: 0.045   # m/s on straight sections
-    speed_curve: 0.040      # m/s in curves
+    speed_straight: 0.065   # m/s on straight sections
+    speed_curve: 0.055      # m/s in curves
 
     # Flip to +1.0 if the car steers in the wrong direction.
     steering_sign: -1.0

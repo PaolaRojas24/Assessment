@@ -1,13 +1,13 @@
+from setuptools import find_packages, setup
 import os
 from glob import glob
-from setuptools import setup
 
-package_name = 'qcar_lane_perception'
+package_name = 'qcar_odom_viz'
 
 setup(
     name=package_name,
     version='0.1.0',
-    packages=[package_name],
+    packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -15,19 +15,17 @@ setup(
         (os.path.join('share', package_name, 'launch'),
             glob('launch/*.launch.py')),
         (os.path.join('share', package_name, 'config'),
-            glob('config/*.yaml')),
+            glob('config/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='xyg',
-    maintainer_email='xyg122413@gmail.com',
-    description='Lane detection pipeline for the QCar.',
+    maintainer='Desarrollador',
+    maintainer_email='usuario@example.com',
+    description='Visualizacion en RViz de la odometria del QCar (/odom -> Path)',
     license='MIT',
     entry_points={
         'console_scripts': [
-            'image_converter = qcar_lane_perception.image_converter:main',
-            'lane_detector = qcar_lane_perception.lane_detector:main',
-            'image_relay = qcar_lane_perception.image_relay:main',
+            'odom_path = qcar_odom_viz.odom_path:main',
         ],
     },
 )
