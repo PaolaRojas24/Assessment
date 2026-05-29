@@ -1,13 +1,12 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>qcar_odom_viz</name>
+  <name>qcar_data_logger</name>
   <version>0.1.0</version>
   <description>
-    Visualizacion en laptop de la odometria del QCar.
-    Suscribe /odom (publicado por qcar_odom corriendo en el carro) y publica
-    nav_msgs/Path con la traza acumulada. Lanza RViz2 con un layout que muestra
-    Odometry + Path + TF.
+    Registra la odometría del QCar (x, y, yaw) en un CSV.
+    Suscribe /odom (nav_msgs/Odometry) y guarda los datos en modo
+    continuo (por distancia mínima) o a tasa fija.
   </description>
 
   <maintainer email="usuario@example.com">Desarrollador</maintainer>
@@ -15,10 +14,7 @@
 
   <depend>rclpy</depend>
   <depend>nav_msgs</depend>
-  <depend>geometry_msgs</depend>
-  <depend>tf2_ros</depend>
-
-  <exec_depend>rviz2</exec_depend>
+  <depend>sensor_msgs</depend>
 
   <buildtool_depend>ament_python</buildtool_depend>
 

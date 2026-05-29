@@ -1,24 +1,24 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>qcar_odom_viz</name>
+  <name>qcar_odom</name>
   <version>0.1.0</version>
   <description>
-    Visualizacion en laptop de la odometria del QCar.
-    Suscribe /odom (publicado por qcar_odom corriendo en el carro) y publica
-    nav_msgs/Path con la traza acumulada. Lanza RViz2 con un layout que muestra
-    Odometry + Path + TF.
+    Odometria del QCar a partir de una IMU servida por una ESP32 via serial.
+    Incluye:
+      - imu_publisher: lee JSON por /dev/ttyUSB0 y publica sensor_msgs/Imu en /imu/data
+      - odom_kalman:   EKF 2D que fusiona /imu/data + /qcar/velocity y publica /odom
   </description>
 
   <maintainer email="usuario@example.com">Desarrollador</maintainer>
   <license>MIT</license>
 
   <depend>rclpy</depend>
-  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
-  <depend>tf2_ros</depend>
-
-  <exec_depend>rviz2</exec_depend>
+  <depend>nav_msgs</depend>
+  <depend>python3-serial</depend>
+  <depend>python3-numpy</depend>
 
   <buildtool_depend>ament_python</buildtool_depend>
 
