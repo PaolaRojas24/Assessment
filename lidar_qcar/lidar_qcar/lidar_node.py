@@ -12,11 +12,15 @@ Nodo ROS 2 para el sensor LiDAR del QCar.
 
 Detección de obstáculo
 ----------------------
-Se debe evaluar un rectángulo que cubra por todos lados al robot de OBS_DEPTH × OBS_WIDTH (m).
+Se evalúa un trapecio frente al robot:
+  - Base ancha (OBS_WIDTH)   en x = 0   (cerca del robot)
+  - Base estrecha (OBS_WIDTH_FAR) en x = OBS_DEPTH (lejos del robot)
 Para cada rayo i con ángulo θ_i:
-  - distancia longitudinal  x = r · cos(θ_i)
-  - distancia lateral        y = r · sin(θ_i)
-Si  0 < x ≤ OBS_DEPTH  y  |y| ≤ OBS_WIDTH / 2  → obstáculo detectado.
+  - x = r · cos(θ_i)   (distancia longitudinal, solo frente: x > 0)
+  - y = r · sin(θ_i)   (distancia lateral)
+El semi-ancho permitido en x interpola linealmente:
+  half_w(x) = OBS_WIDTH/2 + (OBS_WIDTH_FAR/2 - OBS_WIDTH/2) * (x / OBS_DEPTH)
+Si  0 < x ≤ OBS_DEPTH  y  |y| ≤ half_w(x)  → obstáculo detectado.
 """
 
 import os
@@ -33,9 +37,10 @@ import math
 import json
 
 
-# ── Dimensiones del rectángulo de seguridad ──────────────────────────────────
-OBS_DEPTH = 0.20 * 2  # metros hacia el frente
-OBS_WIDTH = 0.60 * 2 # 60
+# ── Dimensiones del trapecio de seguridad (frente al robot) ──────────────────
+OBS_DEPTH     = 0.20 * 2   # metros hacia el frente
+OBS_WIDTH     = 0.60 * 2   # ancho en la base (cerca del robot)
+OBS_WIDTH_FAR = 0.20 * 2   # ancho en la punta (lejos del robot)
 DEAD_ZONE_DEPTH = 0.1 * 2
 DEAD_ZONE_WIDTH = 0.18 * 2
 
@@ -103,8 +108,6 @@ class LidarNode(Node):
 
     # ── Diagnóstico automático ────────────────────────────────────────────────
     def _diagnostics(self):
-        """Se ejecuta cada diag_timeout segundos. Si no llegó ningún mensaje,
-        imprime un aviso con posibles causas."""
         if self._msg_count == 0:
             domain_id = os.environ.get('ROS_DOMAIN_ID', '0 (default)')
             self.get_logger().warn(
@@ -120,32 +123,46 @@ class LidarNode(Node):
                 f'     Verificar: ping <ip_del_qcar>'
             )
         else:
-            # Ya recibimos mensajes → cancelar timer
             self._diag_timer.cancel()
 
-    # ── Detección de obstáculo ────────────────────────────────────────────────
+    # ── Detección de obstáculo (trapecio frontal) ─────────────────────────────
     def _obstacle_in_rect(self, msg: LaserScan) -> bool:
-        """Devuelve True si algún punto válido cae dentro del rectángulo que envuelve al robot OBS_DEPTH × OBS_WIDTH centrado en el centro."""
-        half_width = OBS_WIDTH / 2.0
-        half_depth = OBS_DEPTH / 2.0
+        """
+        Devuelve True si algún punto válido cae dentro del trapecio frontal.
+        El ancho permitido se reduce linealmente con la distancia x:
+          half_w(x) = OBS_WIDTH/2  →  OBS_WIDTH_FAR/2  a lo largo de OBS_DEPTH.
+        Solo se evalúa el frente (x > 0).
+        """
+        half_w_near = OBS_WIDTH     / 2.0
+        half_w_far  = OBS_WIDTH_FAR / 2.0
+
         angle = msg.angle_min
         for r in msg.ranges:
-            
             if math.isfinite(r) and msg.range_min <= r <= msg.range_max:
                 x = r * math.cos(angle)
                 y = r * math.sin(angle)
 
+                # Solo frente
+                if x <= 0 or x > OBS_DEPTH:
+                    angle += msg.angle_increment
+                    continue
+
+                # Dead zone
                 inside_dead_zone = (
                     abs(x) <= DEAD_ZONE_DEPTH / 2.0 and
                     abs(y) <= DEAD_ZONE_WIDTH / 2.0
                 )
-
                 if inside_dead_zone:
                     angle += msg.angle_increment
                     continue
 
-                if abs(x) <= half_depth and abs(y) <= half_width: #EL ERROR DE POSICIÓN DESPLAZADA ESTÁ EN ESTA LÍNEA Y ESTÁ ASOCIADO con "X"
+                # Ancho permitido interpolado linealmente
+                t = x / OBS_DEPTH                              # 0 (cerca) → 1 (lejos)
+                half_w = half_w_near + (half_w_far - half_w_near) * t
+
+                if abs(y) <= half_w:
                     return True
+
             angle += msg.angle_increment
         return False
 
@@ -184,7 +201,8 @@ class LidarNode(Node):
         if obstacle:
             self.get_logger().warn(
                 f'⛔ Obstáculo detectado en zona frontal '
-                f'({OBS_DEPTH*100:.0f}×{OBS_WIDTH*100:.0f} cm)'
+                f'(trapecio {OBS_DEPTH*100:.0f} cm fondo, '
+                f'{OBS_WIDTH*100:.0f}→{OBS_WIDTH_FAR*100:.0f} cm ancho)'
             )
 
         # Modificar frame_id
@@ -223,33 +241,47 @@ class LidarNode(Node):
             )
 
     def _publish_safety_marker(self, stamp, obstacle: bool):
+        # ── Trapecio: publicar como LINE_LIST (4 lados) ───────────────────────
+        from visualization_msgs.msg import Marker
+        from geometry_msgs.msg import Point
+
+        half_w_near = OBS_WIDTH     / 2.0
+        half_w_far  = OBS_WIDTH_FAR / 2.0
+
+        # Esquinas del trapecio (plano XY, z=0)
+        corners = [
+            (0.0,        half_w_near),   # base izquierda (cerca)
+            (0.0,       -half_w_near),   # base derecha  (cerca)
+            (OBS_DEPTH, -half_w_far),    # punta derecha (lejos)
+            (OBS_DEPTH,  half_w_far),    # punta izquierda (lejos)
+        ]
+
         m = Marker()
         m.header.frame_id = 'lidar_corrected'
         m.header.stamp = stamp
         m.ns = 'safety_zone'
         m.id = 0
-        m.type = Marker.CUBE
+        m.type = Marker.LINE_STRIP
         m.action = Marker.ADD
-
-        # Centrar el cubo en el origen
-        m.pose.position.x = 0.0
-        m.pose.position.y = 0.0
-        m.pose.position.z = 0.0
         m.pose.orientation.w = 1.0
+        m.scale.x = 0.02  # grosor de línea
 
-        m.scale.x = OBS_DEPTH   # profundidad
-        m.scale.y = OBS_WIDTH    # ancho
-        m.scale.z = 0.05         # altura simbólica (5 cm)
-
-        # Rojo si hay obstáculo, verde si está libre — alfa 0.35
         m.color.r = 1.0 if obstacle else 0.0
         m.color.g = 0.0 if obstacle else 1.0
         m.color.b = 0.0
-        m.color.a = 0.35
+        m.color.a = 0.8
 
-        m.lifetime.sec = 0       # 0 = persiste hasta nueva publicación
+        for cx, cy in corners + [corners[0]]:  # cerrar el polígono
+            p = Point()
+            p.x = cx
+            p.y = cy
+            p.z = 0.0
+            m.points.append(p)
+
+        m.lifetime.sec = 0
         self.publisher_marker.publish(m)
 
+        # ── Dead zone (cubo azul, sin cambios) ───────────────────────────────
         m_dead = Marker()
         m_dead.header.frame_id = 'lidar_corrected'
         m_dead.header.stamp = stamp
@@ -263,12 +295,12 @@ class LidarNode(Node):
         m_dead.scale.z = 0.05
         m_dead.pose.orientation.w = 1.0
 
-        m_dead.color.r = 0.0 
+        m_dead.color.r = 0.0
         m_dead.color.g = 0.0
         m_dead.color.b = 1.0
         m_dead.color.a = 0.35
 
-        m_dead.lifetime.sec = 0 
+        m_dead.lifetime.sec = 0
         self.publisher_marker.publish(m_dead)
 
 
