@@ -22,6 +22,9 @@ class LaneFollowerQ(Node):
         self.declare_parameter('speed_straight', 0.15)
         self.declare_parameter('speed_curve', 0.0775)
         self.declare_parameter('steering_sign', -1.0)
+        # EMA low-pass filter on steering output.
+        # 0.0 = no filter (raw), 0.5 = moderate, 0.8 = heavy smoothing.
+        self.declare_parameter('steering_lpf_alpha', 0.5)
 
         target_topic = self.get_parameter('target_point_topic').value
         cmd_topic = self.get_parameter('cmd_topic').value
@@ -37,8 +40,10 @@ class LaneFollowerQ(Node):
         self.speed_straight = float(self.get_parameter('speed_straight').value)
         self.speed_curve = float(self.get_parameter('speed_curve').value)
         self.steering_sign = float(self.get_parameter('steering_sign').value)
+        self.steering_lpf_alpha = float(self.get_parameter('steering_lpf_alpha').value)
 
         self.last_speed_command = 0.0
+        self._steering_filtered = 0.0
 
         self.subscription = self.create_subscription(
             Float32MultiArray, target_topic, self.target_callback, 10)
@@ -94,7 +99,11 @@ class LaneFollowerQ(Node):
         steering_angle = math.atan2(2.0 * self.wheelbase * target_x, lookahead * lookahead)
         steering_angle = self.clamp(steering_angle, -self.max_steering_angle, self.max_steering_angle)
 
-        if abs(steering_angle) > self.curve_threshold:
+        # EMA low-pass filter — smooths abrupt changes from noisy detections.
+        a = self.steering_lpf_alpha
+        self._steering_filtered = a * self._steering_filtered + (1.0 - a) * steering_angle
+
+        if abs(self._steering_filtered) > self.curve_threshold:
             speed = self.speed_curve
         else:
             speed = self.speed_straight
@@ -102,8 +111,8 @@ class LaneFollowerQ(Node):
         if self.platform == 'qcar':
             cmd = Vector3Stamped()
             cmd.header.stamp = self.get_clock().now().to_msg()
-            cmd.vector.x = speed  # throttle
-            cmd.vector.y = self.steering_sign * steering_angle  # steering
+            cmd.vector.x = speed
+            cmd.vector.y = self.steering_sign * self._steering_filtered
             self.cmd_pub.publish(cmd)
             self.last_speed_command = speed
         elif self.platform == 'qcar2':

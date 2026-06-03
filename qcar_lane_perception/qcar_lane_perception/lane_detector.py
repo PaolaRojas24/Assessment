@@ -137,12 +137,18 @@ class LaneDetector(Node):
         self.camera_to_rear_axle_lateral_m = 0.0
 
         # ---- Lane tracking state ----
-        self.lane_half_width_px         = 100.0  # 20 cm at 500 px/m — adjust to half the actual lane width
+        # True: fit all Hough points as one line and follow it directly —
+        # ignores left/right classification and half_width offset.
+        # False: original left/right split with half_width offset to lane center.
+        self.follow_line_directly        = False
+        # Fixed pixel offset from the detected line (follow_line_directly only).
+        # Positive = right of line, negative = left. 500 px/m → 25 px = 5 cm.
+        self.line_offset_px              = 0
+        self.lane_half_width_px         = 70.0
         self.lane_half_width_ema_alpha   = 0.2
         self.dynamic_lane_half_width_px  = self.lane_half_width_px
-        # Bias = 0: follow the detected line exactly.
-        # Tune this if the robot should run left or right of the yellow line.
         self.lane_lateral_bias           = 0.0
+
 
         # ---- Hough — tuned for BEV (217×52 px) ----
         self.hough_threshold       = 10
@@ -151,21 +157,25 @@ class LaneDetector(Node):
 
         # ---- Preprocess ----
         self.wb_enable  = True
+        self.wb_p       = 3.0   # Minkowski order: 1=Gray World, 6=Shades of Gray
         self.clahe_clip = 2.0
         self.clahe_tile = 8
 
         # ---- HLS colour thresholds ----
-        # White: tighter than before to avoid walls — only bright floor markings.
-        # Increase gray_lower[1] (lightness) if walls still appear.
-        self.gray_lower   = np.array([0,   190, 0],  dtype=np.uint8)
-        self.gray_upper   = np.array([179, 255, 40],  dtype=np.uint8)
-        self.yellow_lower = np.array([4,    19, 50],  dtype=np.uint8)
+        # White completely disabled — walls pass the white threshold and create
+        # false left-lane detections that cause oscillation.
+        self.gray_lower   = np.array([0,   111, 0],  dtype=np.uint8)
+        self.gray_upper   = np.array([179, 230, 65], dtype=np.uint8)
+        self.yellow_lower = np.array([4,   19,  50], dtype=np.uint8)
         self.yellow_upper = np.array([35,  225, 255], dtype=np.uint8)
 
         # ---- Mask morphology ----
+        # open_k=3 preserves thin lines in the small BEV (5×5 erases them).
         self.mask_median_k = 5
         self.mask_open_k   = 3
         self.mask_close_k  = 5
+        # White blobs larger than this area (px²) are treated as walls and removed.
+        self.white_max_blob_area = 280
 
         # ---- Canny (applied on BEV grayscale) ----
         self.canny_low  = 14
@@ -173,10 +183,10 @@ class LaneDetector(Node):
 
         # ---- Kalman ----
         self.kalman_enable      = True
-        self.kalman_q           = 3.0
-        self.kalman_r           = 10.0
+        self.kalman_q           = 30  / 10.0
+        self.kalman_r           = 150 / 10.0
         self.kalman_gate_px     = 80
-        self.kalman_max_predict = 30
+        self.kalman_max_predict = 50   # 4 s @ 15 Hz — survive brief line loss in curves
         self.kf_target = _TargetKalman()
         self.kf_target.set_noise(self.kalman_q, self.kalman_r)
 
@@ -241,10 +251,16 @@ class LaneDetector(Node):
         img = frame
         if self.wb_enable:
             f = img.astype(np.float32)
-            means = f.reshape(-1, 3).mean(axis=0)
-            avg = float(means.mean())
+            p = self.wb_p
+            pixels = f.reshape(-1, 3)
+            # Shades of Gray: per-channel Minkowski-p norm
+            est = np.power(
+                np.power(pixels, p).mean(axis=0) + 1e-6,
+                1.0 / p
+            )
+            avg = float(est.mean())
             if avg > 1.0:
-                gains = np.clip(avg / np.maximum(means, 1.0), 0.5, 2.0)
+                gains = np.clip(avg / np.maximum(est, 1e-6), 0.5, 2.0)
                 f *= gains
             img = np.clip(f, 0, 255).astype(np.uint8)
         if self.clahe_clip > 0.05:
@@ -254,6 +270,15 @@ class LaneDetector(Node):
             lab[:, :, 0] = clahe.apply(lab[:, :, 0])
             img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
         return img
+
+    def _remove_large_blobs(self, mask, max_area):
+        """Zero-out connected components larger than max_area pixels."""
+        n, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        out = mask.copy()
+        for i in range(1, n):  # skip background (i=0)
+            if stats[i, cv2.CC_STAT_AREA] > max_area:
+                out[labels == i] = 0
+        return out
 
     def _clean_mask(self, mask):
         k = self.mask_median_k
@@ -290,21 +315,6 @@ class LaneDetector(Node):
           - (x_far, y_far)       = endpoint at far edge of BEV (y = bev_h-1)
           - (x_target, y_target) = lookahead point at 60 % BEV depth
         """
-        left_pts  = []
-        right_pts = []
-        mid_x = bev_w / 2.0
-
-        if lines is not None:
-            for line in lines:
-                x1, y1, x2, y2 = line[0]
-                if abs(y2 - y1) < 5:          # reject near-horizontal
-                    continue
-                avg_x = (x1 + x2) / 2.0
-                if avg_x < mid_x:
-                    left_pts.extend([(y1, x1), (y2, x2)])
-                else:
-                    right_pts.extend([(y1, x1), (y2, x2)])
-
         def fit(pts):
             if len(pts) < 2:
                 return None
@@ -314,11 +324,40 @@ class LaneDetector(Node):
             except Exception:
                 return None
             y_far    = bev_h - 1
-            y_target = int(bev_h * 0.7)
+            y_target = int(bev_h * 0.5)
             lim = 2 * bev_w
             x_far    = int(np.clip(a * y_far    + b, -lim, lim))
             x_target = int(np.clip(a * y_target + b, -lim, lim))
             return [x_far, y_far, x_target, y_target]
+
+        # follow_line_directly: fit ALL points as one line, ignore left/right.
+        if self.follow_line_directly:
+            all_pts = []
+            if lines is not None:
+                for line in lines:
+                    x1, y1, x2, y2 = line[0]
+                    if abs(y2 - y1) < 5:
+                        continue
+                    all_pts.extend([(y1, x1), (y2, x2)])
+            single = fit(all_pts)
+            return [None, None, single]
+
+        left_pts  = []
+        right_pts = []
+        mid_x = bev_w * 0.50
+
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                if abs(y2 - y1) < 5:
+                    continue
+                # Classify by near-end x (min y = closest to car).
+                # avg_x misclassifies curved lines whose far end crosses the midpoint.
+                near_x = x1 if y1 <= y2 else x2
+                if near_x < mid_x:
+                    left_pts.extend([(y1, x1), (y2, x2)])
+                else:
+                    right_pts.extend([(y1, x1), (y2, x2)])
 
         left_line  = fit(left_pts)
         right_line = fit(right_pts)
@@ -349,8 +388,9 @@ class LaneDetector(Node):
 
         if center_line is not None:
             self.last_detected_lane = 1
+            offset = self.line_offset_px if self.follow_line_directly else int(bias * half_w)
             self.last_target_pixel  = [
-                int(center_line[2] - bias * half_w), center_line[3]]
+                int(center_line[2] + offset), center_line[3]]
             self.waiting_cycles = 0
         elif left_line is not None:
             self.last_detected_lane = 0.5
@@ -443,7 +483,8 @@ class LaneDetector(Node):
             hls_bev     = cv2.cvtColor(bev_color, cv2.COLOR_BGR2HLS)
             white_mask  = self.color_segment(hls_bev, self.gray_lower,   self.gray_upper)
             yellow_mask = self.color_segment(hls_bev, self.yellow_lower, self.yellow_upper)
-            bev_mask    = self._clean_mask(cv2.bitwise_or(white_mask, yellow_mask))
+            white_filtered = self._remove_large_blobs(white_mask, self.white_max_blob_area)
+            bev_mask    = self._clean_mask(cv2.bitwise_or(white_filtered, yellow_mask))
 
             # Keep perspective masks for the colour overlay visualization
             hls_persp        = cv2.cvtColor(pp, cv2.COLOR_BGR2HLS)

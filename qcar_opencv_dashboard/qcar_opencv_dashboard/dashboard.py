@@ -74,7 +74,8 @@ class Dashboard(Node):
         self.declare_parameter('safe_stop_pub_topic', '/qcar/safe_stop_active')
         # Safety-zone box dimensions, defaulted to lidar_node.py's constants.
         self.declare_parameter('obstacle_zone_depth_m', 0.4)
-        self.declare_parameter('obstacle_zone_width_m', 1.2)
+        self.declare_parameter('obstacle_zone_width_near_m', 1.2)  # ancho cerca del QCar
+        self.declare_parameter('obstacle_zone_width_far_m', 0.5)   # estrecho al frente
         self.declare_parameter('dead_zone_depth_m', 0.2)
         self.declare_parameter('dead_zone_width_m', 0.36)
         self.declare_parameter('lidar_range_m', 2.0)
@@ -104,7 +105,8 @@ class Dashboard(Node):
         # Safety-zone rectangle dimensions (meters).
         self._obs_zone = (
             float(self.get_parameter('obstacle_zone_depth_m').value),
-            float(self.get_parameter('obstacle_zone_width_m').value),
+            float(self.get_parameter('obstacle_zone_width_near_m').value),
+            float(self.get_parameter('obstacle_zone_width_far_m').value),
         )
         self._dead_zone = (
             float(self.get_parameter('dead_zone_depth_m').value),
@@ -150,6 +152,18 @@ class Dashboard(Node):
         self.create_subscription(
             Bool, self.get_parameter('obstacle_topic').value,
             self._on_obstacle, 10,
+        )
+        # Zone dimensions published (latched) by lidar_node. Single source of
+        # truth: the drawn zones match exactly what the node detects.
+        dims_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            depth=1,
+        )
+        self.create_subscription(
+            Float32MultiArray, '/qcar/safety_zone_dims',
+            self._on_zone_dims, dims_qos,
         )
 
         # Publisher for safe-stop toggle. The safety_mux node subscribes here.
@@ -242,6 +256,14 @@ class Dashboard(Node):
 
     def _on_obstacle(self, msg: Bool):
         self._obstacle = bool(msg.data)
+
+    def _on_zone_dims(self, msg: Float32MultiArray):
+        # [depth, near, far, dead_depth, dead_width] desde lidar_node
+        d = list(msg.data)
+        if len(d) < 5:
+            return
+        self._obs_zone = (d[0], d[1], d[2])
+        self._dead_zone = (d[3], d[4])
 
     def _set_safe_stop(self, active: bool):
         if self._safe_stop_active == active:
@@ -505,8 +527,8 @@ class Dashboard(Node):
         cy = self._panel_h // 2
 
         # Scale so the obstacle zone fits comfortably with room around it.
-        obs_depth, obs_width = self._obs_zone
-        max_extent_m = max(obs_depth, obs_width) * 1.2
+        obs_depth, obs_width_near, obs_width_far = self._obs_zone
+        max_extent_m = max(obs_depth, obs_width_near, obs_width_far) * 1.2
         half_min = min(self._panel_w, self._panel_h) // 2 - 24
         scale = max(1.0, half_min) / max(max_extent_m, 1e-3)
 
@@ -528,33 +550,51 @@ class Dashboard(Node):
             if px.size:
                 panel[py, px] = (90, 90, 90)
 
-        # Draw safety zones as filled translucent rectangles centred on the car.
-        # The zones are defined in the lidar frame; we rotate the corners
-        # the same way as the scan points so they line up after yaw correction.
-        def zone_corners(depth, width):
-            # ±half_depth in lidar +x, ±half_width in lidar +y.
+        # Draw safety zones. Corners are given in the QCar frame (fwd = forward,
+        # lat = lateral); we rotate them by +yaw into the lidar frame and then
+        # apply the same panel transform as the scan points, so "forward" ends
+        # up pointing UP the panel (the car's actual front).
+        def _to_corners(fl_pts):
+            pts = np.asarray(fl_pts, dtype=np.float32)
+            fwd = pts[:, 0]
+            lat = pts[:, 1]
+            x = fwd * c - lat * s          # QCar → lidar
+            y = fwd * s + lat * c
+            xr = c * x + s * y             # lidar → panel
+            yr = -s * x + c * y
+            sx = (cx - yr * scale).astype(np.int32)
+            sy = (cy - xr * scale).astype(np.int32)
+            return np.stack([sx, sy], axis=1).reshape((-1, 1, 2))
+
+        # Dead zone: rectangle axis-aligned in the lidar frame (same as the
+        # original, NOT rotated to the front). depth along x, width along y.
+        def dead_corners(depth, width):
             hd, hw = depth / 2.0, width / 2.0
-            pts = np.array([[ hd,  hw], [ hd, -hw],
-                            [-hd, -hw], [-hd,  hw]], dtype=np.float32)
-            # Rotate.
-            x = pts[:, 0]
-            y = pts[:, 1]
+            pts = np.asarray([[ hd,  hw], [ hd, -hw],
+                              [-hd, -hw], [-hd,  hw]], dtype=np.float32)
+            x = pts[:, 0]; y = pts[:, 1]
             xr = c * x + s * y
             yr = -s * x + c * y
             sx = (cx - yr * scale).astype(np.int32)
             sy = (cy - xr * scale).astype(np.int32)
             return np.stack([sx, sy], axis=1).reshape((-1, 1, 2))
 
+        # Obstacle zone: front trapezoid (wide near the car, narrow ahead).
+        def obs_corners(depth, width_near, width_far):
+            near_h, far_h = width_near / 2.0, width_far / 2.0
+            return _to_corners([[0.0,    near_h], [0.0,   -near_h],
+                                [depth, -far_h],  [depth,  far_h]])
+
         obstacle_color = (0, 0, 220) if self._obstacle else (0, 200, 0)
         # Translucent fill by drawing on overlay then blending.
         overlay = panel.copy()
-        cv2.fillPoly(overlay, [zone_corners(*self._obs_zone)], obstacle_color)
-        cv2.fillPoly(overlay, [zone_corners(*self._dead_zone)], (200, 100, 0))
+        cv2.fillPoly(overlay, [obs_corners(*self._obs_zone)], obstacle_color)
+        cv2.fillPoly(overlay, [dead_corners(*self._dead_zone)], (200, 100, 0))
         cv2.addWeighted(overlay, 0.30, panel, 0.70, 0, panel)
         # Outlines.
-        cv2.polylines(panel, [zone_corners(*self._obs_zone)], True,
+        cv2.polylines(panel, [obs_corners(*self._obs_zone)], True,
                       obstacle_color, 1)
-        cv2.polylines(panel, [zone_corners(*self._dead_zone)], True,
+        cv2.polylines(panel, [dead_corners(*self._dead_zone)], True,
                       (220, 140, 0), 1)
 
         # Car triangle at centre.
