@@ -30,6 +30,7 @@ setup(
         'console_scripts': [
             'test_userCommand = test_pck.test_control:main',
             'lap_recorder = test_pck.lap_recorder:main',
+            'measure_track = test_pck.measure_track:main',
         ],
     },
 )

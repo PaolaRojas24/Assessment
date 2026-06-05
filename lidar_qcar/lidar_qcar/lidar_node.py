@@ -12,11 +12,15 @@ Nodo ROS 2 para el sensor LiDAR del QCar.
 
 Detección de obstáculo
 ----------------------
-Se debe evaluar un rectángulo que cubra por todos lados al robot de OBS_DEPTH × OBS_WIDTH (m).
+Se evalúa SÓLO la zona frontal del robot, con forma de TRAPEZOIDE:
+ancho cerca del QCar (base ancha) y estrecho al frente (lejos).
 Para cada rayo i con ángulo θ_i:
   - distancia longitudinal  x = r · cos(θ_i)
   - distancia lateral        y = r · sin(θ_i)
-Si  0 < x ≤ OBS_DEPTH  y  |y| ≤ OBS_WIDTH / 2  → obstáculo detectado.
+El semiancho permitido se interpola linealmente con x:
+  half_width(x) = (OBS_WIDTH_NEAR + (x/OBS_DEPTH)·(OBS_WIDTH_FAR − OBS_WIDTH_NEAR)) / 2
+Si  0 < x ≤ OBS_DEPTH  y  |y| ≤ half_width(x)  → obstáculo detectado.
+La zona muerta central se mantiene igual y se ignora.
 """
 
 import os
@@ -26,18 +30,27 @@ from rclpy.qos import (QoSProfile, QoSReliabilityPolicy,
                         QoSHistoryPolicy, QoSDurabilityPolicy)
 
 from sensor_msgs.msg import LaserScan
-from std_msgs.msg import String, Bool
+from std_msgs.msg import String, Bool, Float32MultiArray
 from visualization_msgs.msg import Marker
+from geometry_msgs.msg import Point
 
 import math
 import json
 
 
-# ── Dimensiones del rectángulo de seguridad ──────────────────────────────────
-OBS_DEPTH = 0.20 * 2  # metros hacia el frente
-OBS_WIDTH = 0.60 * 2 # 60
+# ── Dimensiones de la zona de seguridad frontal (trapezoide) ─────────────────
+OBS_DEPTH      = 0.16 * 2   # metros hacia el frente
+OBS_WIDTH_NEAR = 0.10 * 2   # ancho cerca del QCar (base ancha del trapezoide)
+OBS_WIDTH_FAR  = 0.06 * 2   # ancho al frente, lejos (parte estrecha)
 DEAD_ZONE_DEPTH = 0.1 * 2
 DEAD_ZONE_WIDTH = 0.18 * 2
+
+# Dirección "enfrente" del QCar dentro del frame del LiDAR (grados).
+# El RPLidar está montado con su 0° hacia el costado, así que el frente real
+# está a -90°. Mismo valor que 'lidar_yaw_offset_deg' de los dashboards.
+FRONT_ANGLE_DEG = -90.0
+_COS_F = math.cos(math.radians(FRONT_ANGLE_DEG))
+_SIN_F = math.sin(math.radians(FRONT_ANGLE_DEG))
 
 
 class LidarNode(Node):
@@ -78,6 +91,19 @@ class LidarNode(Node):
         self.publisher_scan     = self.create_publisher(LaserScan, output_topic, qos_be)
         self.publisher_stats    = self.create_publisher(String, stats_topic, 10)
         self.publisher_obstacle = self.create_publisher(Bool, obstacle_topic, 10)
+
+        # ── Dimensiones de la zona (latched): los dashboards las leen ────────
+        # QoS TRANSIENT_LOCAL para que cualquier dashboard que se conecte
+        # después reciba el último valor sin necesidad de republicar.
+        qos_latched = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            depth=1
+        )
+        self.publisher_dims = self.create_publisher(
+            Float32MultiArray, '/qcar/safety_zone_dims', qos_latched)
+        self._publish_zone_dims()
 
         # ── Estado ───────────────────────────────────────────────────────────
         self._msg_count  = 0
@@ -125,27 +151,36 @@ class LidarNode(Node):
 
     # ── Detección de obstáculo ────────────────────────────────────────────────
     def _obstacle_in_rect(self, msg: LaserScan) -> bool:
-        """Devuelve True si algún punto válido cae dentro del rectángulo que envuelve al robot OBS_DEPTH × OBS_WIDTH centrado en el centro."""
-        half_width = OBS_WIDTH / 2.0
-        half_depth = OBS_DEPTH / 2.0
+        """Devuelve True si algún punto válido cae dentro del trapezoide
+        frontal: sólo enfrente del QCar (x > 0), ancho cerca y estrecho lejos."""
         angle = msg.angle_min
         for r in msg.ranges:
-            
+
             if math.isfinite(r) and msg.range_min <= r <= msg.range_max:
                 x = r * math.cos(angle)
                 y = r * math.sin(angle)
 
-                inside_dead_zone = (
-                    abs(x) <= DEAD_ZONE_DEPTH / 2.0 and
-                    abs(y) <= DEAD_ZONE_WIDTH / 2.0
-                )
+                # Proyección al frame del QCar: fwd = hacia enfrente, lat = lateral
+                fwd =  x * _COS_F + y * _SIN_F
+                lat = -x * _SIN_F + y * _COS_F
 
-                if inside_dead_zone:
-                    angle += msg.angle_increment
-                    continue
+                # Sólo se evalúa la zona frontal (fwd > 0) hasta OBS_DEPTH
+                if 0.0 < fwd <= OBS_DEPTH:
 
-                if abs(x) <= half_depth and abs(y) <= half_width: #EL ERROR DE POSICIÓN DESPLAZADA ESTÁ EN ESTA LÍNEA Y ESTÁ ASOCIADO con "X"
-                    return True
+                    # Zona muerta central: se ignora (igual que el original,
+                    # alineada al frame del LiDAR, SIN rotar)
+                    inside_dead_zone = (
+                        abs(x) <= DEAD_ZONE_DEPTH / 2.0 and
+                        abs(y) <= DEAD_ZONE_WIDTH / 2.0
+                    )
+
+                    if not inside_dead_zone:
+                        # Semiancho interpolado: ancho cerca (fwd≈0) → estrecho lejos (fwd≈OBS_DEPTH)
+                        t = fwd / OBS_DEPTH
+                        half_width = (OBS_WIDTH_NEAR +
+                                      t * (OBS_WIDTH_FAR - OBS_WIDTH_NEAR)) / 2.0
+                        if abs(lat) <= half_width:
+                            return True
             angle += msg.angle_increment
         return False
 
@@ -183,8 +218,9 @@ class LidarNode(Node):
         self.publisher_obstacle.publish(obs_msg)
         if obstacle:
             self.get_logger().warn(
-                f'⛔ Obstáculo detectado en zona frontal '
-                f'({OBS_DEPTH*100:.0f}×{OBS_WIDTH*100:.0f} cm)'
+                f'⛔ Obstáculo detectado en zona frontal (trapezoide '
+                f'{OBS_DEPTH*100:.0f} cm prof., {OBS_WIDTH_NEAR*100:.0f}→'
+                f'{OBS_WIDTH_FAR*100:.0f} cm ancho)'
             )
 
         # Modificar frame_id
@@ -222,24 +258,62 @@ class LidarNode(Node):
                 f'min={r_min:.3f} m  max={r_max:.3f} m  media={r_mean:.3f} m'
             )
 
+    def _publish_zone_dims(self):
+        """Publica (latched) las dimensiones de la zona para que los dashboards
+        dibujen exactamente lo que el nodo detecta. Orden del array:
+        [OBS_DEPTH, OBS_WIDTH_NEAR, OBS_WIDTH_FAR, DEAD_ZONE_DEPTH, DEAD_ZONE_WIDTH]"""
+        dims = Float32MultiArray()
+        dims.data = [
+            float(OBS_DEPTH), float(OBS_WIDTH_NEAR), float(OBS_WIDTH_FAR),
+            float(DEAD_ZONE_DEPTH), float(DEAD_ZONE_WIDTH),
+        ]
+        self.publisher_dims.publish(dims)
+        self.get_logger().info(
+            f'Dimensiones publicadas en /qcar/safety_zone_dims → '
+            f'trapezoide {OBS_DEPTH:.2f}m prof, {OBS_WIDTH_NEAR:.2f}→{OBS_WIDTH_FAR:.2f}m ancho | '
+            f'zona muerta {DEAD_ZONE_DEPTH:.2f}×{DEAD_ZONE_WIDTH:.2f}m'
+        )
+
     def _publish_safety_marker(self, stamp, obstacle: bool):
+        # Trapezoide frontal definido en el frame del QCar (fwd, lat):
+        # ancho cerca (fwd=0) y estrecho al frente (fwd=OBS_DEPTH).
+        near_half = OBS_WIDTH_NEAR / 2.0
+        far_half  = OBS_WIDTH_FAR / 2.0
+        corners_fwd = [
+            (0.0,        near_half),   # A  base ancha, izquierda
+            (0.0,       -near_half),   # B  base ancha, derecha
+            (OBS_DEPTH, -far_half),    # C  frente estrecho, derecha
+            (OBS_DEPTH,  far_half),    # D  frente estrecho, izquierda
+        ]
+        # Rotar (fwd, lat) → (x, y) del LiDAR según FRONT_ANGLE_DEG.
+        corners = [
+            (f * _COS_F - l * _SIN_F, f * _SIN_F + l * _COS_F)
+            for (f, l) in corners_fwd
+        ]
+
+        def _pt(xy):
+            p = Point()
+            p.x = float(xy[0])
+            p.y = float(xy[1])
+            p.z = 0.0
+            return p
+
         m = Marker()
         m.header.frame_id = 'lidar_corrected'
         m.header.stamp = stamp
         m.ns = 'safety_zone'
         m.id = 0
-        m.type = Marker.CUBE
+        m.type = Marker.TRIANGLE_LIST
         m.action = Marker.ADD
 
-        # Centrar el cubo en el origen
-        m.pose.position.x = 0.0
-        m.pose.position.y = 0.0
-        m.pose.position.z = 0.0
         m.pose.orientation.w = 1.0
+        m.scale.x = 1.0          # TRIANGLE_LIST usa escala 1 (puntos en metros)
+        m.scale.y = 1.0
+        m.scale.z = 1.0
 
-        m.scale.x = OBS_DEPTH   # profundidad
-        m.scale.y = OBS_WIDTH    # ancho
-        m.scale.z = 0.05         # altura simbólica (5 cm)
+        # Dos triángulos para rellenar el trapezoide: (A,B,C) y (A,C,D)
+        for idx in (0, 1, 2, 0, 2, 3):
+            m.points.append(_pt(corners[idx]))
 
         # Rojo si hay obstáculo, verde si está libre — alfa 0.35
         m.color.r = 1.0 if obstacle else 0.0

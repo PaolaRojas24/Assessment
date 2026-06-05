@@ -27,6 +27,7 @@ Topics consumed:
   /qcar/user_command            Vector3Stamped       throttle/steering
   /qcar/scan                    LaserScan            LiDAR + Lidar detection
   /qcar/stateBattery            BatteryState         Battery
+  /imu/data                     Imu                  IMU (brújula yaw + deriva)
   /qcar/obstacle_detected       Bool                 Lidar detection status
 
 Topics published:
@@ -44,7 +45,7 @@ from rclpy.qos import QoSHistoryPolicy, QoSDurabilityPolicy
 import numpy as np
 import cv2
 
-from sensor_msgs.msg import Image, LaserScan, BatteryState
+from sensor_msgs.msg import Image, LaserScan, BatteryState, Imu
 from std_msgs.msg import Float32MultiArray, Bool
 from geometry_msgs.msg import Vector3Stamped
 
@@ -69,12 +70,14 @@ class Dashboard(Node):
         self.declare_parameter('target_topic', '/lane_target_point_m')
         self.declare_parameter('cmd_topic', '/qcar/user_command')
         self.declare_parameter('battery_topic', '/qcar/stateBattery')
+        self.declare_parameter('imu_topic', '/imu/data')
         self.declare_parameter('scan_topic', '/qcar/scan')
         self.declare_parameter('obstacle_topic', '/qcar/obstacle_detected')
         self.declare_parameter('safe_stop_pub_topic', '/qcar/safe_stop_active')
         # Safety-zone box dimensions, defaulted to lidar_node.py's constants.
         self.declare_parameter('obstacle_zone_depth_m', 0.4)
-        self.declare_parameter('obstacle_zone_width_m', 1.2)
+        self.declare_parameter('obstacle_zone_width_near_m', 1.2)  # ancho cerca del QCar
+        self.declare_parameter('obstacle_zone_width_far_m', 0.5)   # estrecho al frente
         self.declare_parameter('dead_zone_depth_m', 0.2)
         self.declare_parameter('dead_zone_width_m', 0.36)
         self.declare_parameter('lidar_range_m', 2.0)
@@ -104,14 +107,16 @@ class Dashboard(Node):
         # Safety-zone rectangle dimensions (meters).
         self._obs_zone = (
             float(self.get_parameter('obstacle_zone_depth_m').value),
-            float(self.get_parameter('obstacle_zone_width_m').value),
+            float(self.get_parameter('obstacle_zone_width_near_m').value),
+            float(self.get_parameter('obstacle_zone_width_far_m').value),
         )
         self._dead_zone = (
             float(self.get_parameter('dead_zone_depth_m').value),
             float(self.get_parameter('dead_zone_width_m').value),
         )
-        # Safe-stop state. Click the title-bar button or press SPACE to toggle.
-        self._safe_stop_active = False
+        # Safe-stop state. Arranca ACTIVO: el coche no se mueve hasta que el
+        # usuario lo libere (tecla ENTER / SPACE o clic en el botón).
+        self._safe_stop_active = True
         self._safe_stop_button_bbox = None  # populated each render
 
         be = _be_qos()
@@ -151,10 +156,32 @@ class Dashboard(Node):
             Bool, self.get_parameter('obstacle_topic').value,
             self._on_obstacle, 10,
         )
+        self.create_subscription(
+            Imu, self.get_parameter('imu_topic').value,
+            self._on_imu, 10,
+        )
+        # Zone dimensions published (latched) by lidar_node. Single source of
+        # truth: the drawn zones match exactly what the node detects.
+        dims_qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            depth=1,
+        )
+        self.create_subscription(
+            Float32MultiArray, '/qcar/safety_zone_dims',
+            self._on_zone_dims, dims_qos,
+        )
 
         # Publisher for safe-stop toggle. The safety_mux node subscribes here.
         self.safe_stop_pub = self.create_publisher(
             Bool, self.get_parameter('safe_stop_pub_topic').value, 10
+        )
+        # Publica el estado inicial (ACTIVO) para que el coche no arranque.
+        self._publish_safe_stop_state()
+        self.get_logger().warn(
+            'SAFE STOP ACTIVO al iniciar — pulsa ENTER para liberar y permitir '
+            'que el coche se mueva.'
         )
 
         self._raw = None
@@ -166,6 +193,8 @@ class Dashboard(Node):
         # Battery: only voltage is populated by the QCar driver; everything
         # else in BatteryState comes through as zero/empty.
         self._battery = {'voltage': None, 'stamp_ns': 0}
+        # IMU: rumbo (yaw) y velocidad angular gz para la brújula + deriva.
+        self._imu = {'yaw': 0.0, 'gz': 0.0, 'stamp_ns': 0}
         # _scan_xy: precomputed (x, y) points in lidar frame (forward=+x, left=+y).
         self._scan_xy = None
         # Lidar obstacle flag from lidar_qcar's lidar_node.
@@ -243,6 +272,36 @@ class Dashboard(Node):
     def _on_obstacle(self, msg: Bool):
         self._obstacle = bool(msg.data)
 
+    def _on_imu(self, msg: Imu):
+        # El rumbo se INTEGRA de la velocidad angular ya corregida (gz con
+        # banda muerta), no del quaternion de orientación. Motivo: el
+        # quaternion viene de la fusión interna del sensor, que deriva por su
+        # cuenta aunque gz esté en cero. Integrando gz, la aguja y el texto
+        # usan la MISMA señal: si gz=0 (estático), la aguja no se mueve.
+        gz = float(msg.angular_velocity.z)
+        stamp_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
+        prev = self._imu['stamp_ns']
+        yaw = self._imu['yaw']
+        if prev != 0:
+            dt = (stamp_ns - prev) * 1e-9
+            if 0.0 < dt < 0.5:
+                yaw += gz * dt
+                yaw = float(np.arctan2(np.sin(yaw), np.cos(yaw)))
+        self._imu = {'yaw': yaw, 'gz': gz, 'stamp_ns': stamp_ns}
+
+    def _on_zone_dims(self, msg: Float32MultiArray):
+        # [depth, near, far, dead_depth, dead_width] desde lidar_node
+        d = list(msg.data)
+        if len(d) < 5:
+            return
+        self._obs_zone = (d[0], d[1], d[2])
+        self._dead_zone = (d[3], d[4])
+
+    def _publish_safe_stop_state(self):
+        out = Bool()
+        out.data = bool(self._safe_stop_active)
+        self.safe_stop_pub.publish(out)
+
     def _set_safe_stop(self, active: bool):
         if self._safe_stop_active == active:
             return
@@ -250,9 +309,7 @@ class Dashboard(Node):
         self.get_logger().warn(
             f'SAFE STOP {"ENGAGED" if active else "RELEASED"} (from dashboard)'
         )
-        out = Bool()
-        out.data = active
-        self.safe_stop_pub.publish(out)
+        self._publish_safe_stop_state()
 
     def _on_mouse(self, event, x, y, flags, param):
         if event != cv2.EVENT_LBUTTONDOWN:
@@ -505,8 +562,8 @@ class Dashboard(Node):
         cy = self._panel_h // 2
 
         # Scale so the obstacle zone fits comfortably with room around it.
-        obs_depth, obs_width = self._obs_zone
-        max_extent_m = max(obs_depth, obs_width) * 1.2
+        obs_depth, obs_width_near, obs_width_far = self._obs_zone
+        max_extent_m = max(obs_depth, obs_width_near, obs_width_far) * 1.2
         half_min = min(self._panel_w, self._panel_h) // 2 - 24
         scale = max(1.0, half_min) / max(max_extent_m, 1e-3)
 
@@ -528,33 +585,51 @@ class Dashboard(Node):
             if px.size:
                 panel[py, px] = (90, 90, 90)
 
-        # Draw safety zones as filled translucent rectangles centred on the car.
-        # The zones are defined in the lidar frame; we rotate the corners
-        # the same way as the scan points so they line up after yaw correction.
-        def zone_corners(depth, width):
-            # ±half_depth in lidar +x, ±half_width in lidar +y.
+        # Draw safety zones. Corners are given in the QCar frame (fwd = forward,
+        # lat = lateral); we rotate them by +yaw into the lidar frame and then
+        # apply the same panel transform as the scan points, so "forward" ends
+        # up pointing UP the panel (the car's actual front).
+        def _to_corners(fl_pts):
+            pts = np.asarray(fl_pts, dtype=np.float32)
+            fwd = pts[:, 0]
+            lat = pts[:, 1]
+            x = fwd * c - lat * s          # QCar → lidar
+            y = fwd * s + lat * c
+            xr = c * x + s * y             # lidar → panel
+            yr = -s * x + c * y
+            sx = (cx - yr * scale).astype(np.int32)
+            sy = (cy - xr * scale).astype(np.int32)
+            return np.stack([sx, sy], axis=1).reshape((-1, 1, 2))
+
+        # Dead zone: rectangle axis-aligned in the lidar frame (same as the
+        # original, NOT rotated to the front). depth along x, width along y.
+        def dead_corners(depth, width):
             hd, hw = depth / 2.0, width / 2.0
-            pts = np.array([[ hd,  hw], [ hd, -hw],
-                            [-hd, -hw], [-hd,  hw]], dtype=np.float32)
-            # Rotate.
-            x = pts[:, 0]
-            y = pts[:, 1]
+            pts = np.asarray([[ hd,  hw], [ hd, -hw],
+                              [-hd, -hw], [-hd,  hw]], dtype=np.float32)
+            x = pts[:, 0]; y = pts[:, 1]
             xr = c * x + s * y
             yr = -s * x + c * y
             sx = (cx - yr * scale).astype(np.int32)
             sy = (cy - xr * scale).astype(np.int32)
             return np.stack([sx, sy], axis=1).reshape((-1, 1, 2))
 
+        # Obstacle zone: front trapezoid (wide near the car, narrow ahead).
+        def obs_corners(depth, width_near, width_far):
+            near_h, far_h = width_near / 2.0, width_far / 2.0
+            return _to_corners([[0.0,    near_h], [0.0,   -near_h],
+                                [depth, -far_h],  [depth,  far_h]])
+
         obstacle_color = (0, 0, 220) if self._obstacle else (0, 200, 0)
         # Translucent fill by drawing on overlay then blending.
         overlay = panel.copy()
-        cv2.fillPoly(overlay, [zone_corners(*self._obs_zone)], obstacle_color)
-        cv2.fillPoly(overlay, [zone_corners(*self._dead_zone)], (200, 100, 0))
+        cv2.fillPoly(overlay, [obs_corners(*self._obs_zone)], obstacle_color)
+        cv2.fillPoly(overlay, [dead_corners(*self._dead_zone)], (200, 100, 0))
         cv2.addWeighted(overlay, 0.30, panel, 0.70, 0, panel)
         # Outlines.
-        cv2.polylines(panel, [zone_corners(*self._obs_zone)], True,
+        cv2.polylines(panel, [obs_corners(*self._obs_zone)], True,
                       obstacle_color, 1)
-        cv2.polylines(panel, [zone_corners(*self._dead_zone)], True,
+        cv2.polylines(panel, [dead_corners(*self._dead_zone)], True,
                       (220, 140, 0), 1)
 
         # Car triangle at centre.
@@ -572,6 +647,89 @@ class Dashboard(Node):
         cv2.putText(panel, text,
                     ((self._panel_w - tw) // 2, self._panel_h - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2,
+                    lineType=cv2.LINE_AA)
+        return panel
+
+    def _build_imu_panel(self):
+        """Brújula de rumbo (yaw) + velocidad angular gz + detector de deriva.
+
+        La aguja roja apunta al rumbo integrado de la velocidad angular
+        corregida (gz) — misma señal que el texto, así nunca se contradicen.
+        Si el coche está parado (throttle≈0) pero gz no es ~0, se marca DERIVA:
+        ese es el síntoma del bias residual del giroscopio que se corrige en
+        imu_external.py (auto-calibración + banda muerta)."""
+        panel = np.zeros((self._panel_h, self._panel_w, 3), dtype=np.uint8)
+        cv2.putText(panel, 'IMU /imu/data', (6, 16),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1,
+                    lineType=cv2.LINE_AA)
+
+        if self._imu['stamp_ns'] == 0:
+            cv2.putText(panel, 'waiting...', (10, self._panel_h // 2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (80, 80, 80), 1,
+                        lineType=cv2.LINE_AA)
+            return panel
+
+        yaw = self._imu['yaw']   # rad
+        gz = self._imu['gz']     # rad/s
+
+        cx = self._panel_w // 2
+        cy = 112
+        R = 72
+        cv2.circle(panel, (cx, cy), R, (70, 70, 70), 1)
+        cv2.circle(panel, (cx, cy), 2, (200, 200, 200), -1)
+
+        # Ticks cada 30°. Convención: 0°=arriba (N), CCW positivo (como ROS).
+        for deg in range(0, 360, 30):
+            a = np.radians(deg)
+            x_out = cx - R * np.sin(a)
+            y_out = cy - R * np.cos(a)
+            x_in = cx - (R - 6) * np.sin(a)
+            y_in = cy - (R - 6) * np.cos(a)
+            cv2.line(panel, (int(x_in), int(y_in)), (int(x_out), int(y_out)),
+                     (90, 90, 90), 1)
+
+        # Letras cardinales.
+        for label, (lx, ly) in (
+            ('N', (cx - 6, cy - R + 16)),
+            ('S', (cx - 6, cy + R - 6)),
+            ('E', (cx + R - 14, cy + 5)),
+            ('W', (cx - R + 4, cy + 5)),
+        ):
+            cv2.putText(panel, label, (lx, ly),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (140, 140, 140), 1,
+                        lineType=cv2.LINE_AA)
+
+        # Aguja: punta roja al rumbo, cola gris opuesta.
+        tip_x = int(cx - (R - 10) * np.sin(yaw))
+        tip_y = int(cy - (R - 10) * np.cos(yaw))
+        tail_x = int(cx + (R - 30) * np.sin(yaw))
+        tail_y = int(cy + (R - 30) * np.cos(yaw))
+        cv2.line(panel, (cx, cy), (tail_x, tail_y), (120, 120, 120), 2)
+        cv2.line(panel, (cx, cy), (tip_x, tip_y), (0, 0, 230), 2)
+        cv2.circle(panel, (tip_x, tip_y), 3, (0, 0, 230), -1)
+
+        # Lecturas numéricas.
+        cv2.putText(panel, f'yaw: {np.degrees(yaw):+6.1f} deg',
+                    (6, self._panel_h - 44),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 200, 255), 1,
+                    lineType=cv2.LINE_AA)
+        cv2.putText(panel, f'gz : {gz:+.3f} rad/s',
+                    (6, self._panel_h - 24),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 200, 255), 1,
+                    lineType=cv2.LINE_AA)
+
+        # Detector de deriva: si el coche está comandado a parar pero gira.
+        commanded_stop = (abs(self._cmd['throttle']) < 0.01 and
+                          abs(self._cmd['steering']) < 0.02)
+        if commanded_stop:
+            if abs(gz) > 0.02:
+                status, scol = 'DERIVA!', (0, 0, 230)
+            else:
+                status, scol = 'OK (estatico)', (0, 220, 0)
+        else:
+            status, scol = 'en movimiento', (160, 160, 160)
+        cv2.putText(panel, f'DRIFT: {status}', (6, self._panel_h - 4),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, scol, 1,
                     lineType=cv2.LINE_AA)
         return panel
 
@@ -615,11 +773,11 @@ class Dashboard(Node):
         if self._safe_stop_active:
             fill = (0, 0, 200)
             border = (0, 0, 255)
-            label = 'SAFE STOP: ON'
+            label = 'SAFE STOP: ON  (ENTER para liberar)'
         else:
             fill = (50, 50, 50)
             border = (140, 140, 140)
-            label = 'SAFE STOP: off  (click / SPACE)'
+            label = 'SAFE STOP: off  (click / ENTER)'
 
         cv2.rectangle(bar, (btn_x0, btn_y0), (btn_x1, btn_y1), fill, -1)
         cv2.rectangle(bar, (btn_x0, btn_y0), (btn_x1, btn_y1), border, 2)
@@ -699,9 +857,7 @@ class Dashboard(Node):
         r1c3 = self._build_lidar_panel()
 
         r2c1 = self._fit_panel(self._mask, 'ColorSelect /qcar/line_follower/mask')
-        r2c2 = self._build_placeholder_panel(
-            'IMU', 'IMU + encoders', 'PCB / ESP32 firmware pending'
-        )
+        r2c2 = self._build_imu_panel()
         r2c3 = self._fit_panel(self._raw, 'Csi_front /qcar/decompressed/csi_front')
 
         r3c1 = self._fit_panel(self._bev, 'BEV /qcar/line_follower/bev')
@@ -717,11 +873,15 @@ class Dashboard(Node):
         canvas = cv2.vconcat([title, body])
 
         cv2.imshow(self._title, canvas)
+        # Republica el estado del safe-stop cada frame: así el coche queda
+        # frenado aunque el safety_mux se conecte después del arranque.
+        self._publish_safe_stop_state()
+
         key = cv2.waitKey(1) & 0xFF
         if key in (ord('q'), 27):  # q or ESC
             self.get_logger().info('quit key pressed -- shutting down dashboard')
             raise KeyboardInterrupt()
-        if key == ord(' '):
+        if key in (ord(' '), 13, 10):  # SPACE o ENTER (CR/LF) → liberar/activar
             self._set_safe_stop(not self._safe_stop_active)
 
 

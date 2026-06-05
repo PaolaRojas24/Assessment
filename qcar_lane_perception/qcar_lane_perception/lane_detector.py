@@ -137,12 +137,12 @@ class LaneDetector(Node):
         # of the lane horizon (tuned in line_perception_offline.py).
         self.roi_polygon_points_px = np.array([
             0.0,   410.0,
-            20.0,  239.0,
-            780.0, 239.0,
+            20.0,  290.0, #old value 239
+            780.0, 290.0, #old value 239
             820.0, 410.0,
         ], dtype=np.float32).reshape((4, 2))
 
-        # ---- Physical car geometry ----
+        # ---- Physical car geometry ----ros2 launch ROSes_pkg qcar_red_lf.launch.py nodes:='qcar,rgbd,csi_lf,imu_external,odom_kalman,lidar_qos,command'
         self.camera_to_rear_axle_forward_m = 0.323
         self.camera_to_rear_axle_lateral_m = 0.0
 
@@ -151,6 +151,13 @@ class LaneDetector(Node):
         self.lane_half_width_ema_alpha = 0.2
         self.dynamic_lane_half_width_px = self.lane_half_width_px
         self.lane_lateral_bias = float(np.clip(0.25, -0.9, 0.9))
+        # Yellow dominates direction: the white line only sets the lateral
+        # offset (half-lane width). Reject white measurements that imply a
+        # sudden width change beyond this ratio -- e.g. a fork where the white
+        # peels off right while the yellow goes straight/left -- so the offset
+        # stays bounded and the yellow keeps steering. 1.0 = freeze on first
+        # estimate, higher = more permissive.
+        self.lane_width_max_ratio = 1.5
 
         # ---- Hough (tuned at 820x410) ----
         self.hough_threshold       = 50
@@ -159,19 +166,37 @@ class LaneDetector(Node):
 
         # ---- Preprocess: gray-world WB + CLAHE on L of LAB ----
         self.wb_enable  = True
-        self.clahe_clip = 20 / 10.0
+        self.clahe_clip = 0 #20 / 10.0
         self.clahe_tile = 8
 
         # ---- HLS color thresholds (offline-tuned) ----
         self.gray_lower   = np.array([0,   111, 0],  dtype=np.uint8)
         self.gray_upper   = np.array([179, 230, 65], dtype=np.uint8)
-        self.yellow_lower = np.array([4,   19,  50], dtype=np.uint8)
-        self.yellow_upper = np.array([35,  225, 255], dtype=np.uint8)
+        self.yellow_lower = np.array([4,   19,  50], dtype=np.uint8) # old 4 19 50
+        self.yellow_upper = np.array([35,  225, 255], dtype=np.uint8) # old 35 225 255
+
+        # ---- Yellow-left guard ----
+        # Keep the stable slope-based left/right split, but never let a YELLOW
+        # segment land on the right: the yellow line is always on the robot's
+        # left, so a yellow segment is forced into the left group. Yellow is
+        # sampled only inside the ROI, so the yellowish damaged camera center
+        # (which sits above the ROI) can't trigger it.
+        self.yellow_left_guard  = True
+        self.yellow_sample_frac = 0.30   # min fraction of a segment on yellow
+        # Yellow wins the overlap: the yellow line is bordered by white and the
+        # white mask bleeds onto it. Remove yellow (grown by this many px) from
+        # the white mask so white keeps only the genuine right line. 0 disables.
+        self.yellow_priority_px = 7
+        # Master switch: strict color sides (left=yellow, right=white) with the
+        # target ANCHORED on the always-solid yellow line, so the car no longer
+        # depends on the dashed white line and auto-recovers from the opposite
+        # lane. False falls back to the slope split + yellow_left_guard.
+        self.color_side_classify = True
 
         # ---- Mask morphology (median + open + close) ----
-        self.mask_median_k = 5
-        self.mask_open_k   = 3
-        self.mask_close_k  = 5
+        self.mask_median_k = 5 # 5
+        self.mask_open_k   = 3 # 3
+        self.mask_close_k  = 5 # 5
 
         # ---- Canny on grayscale, AND-ed with cleaned mask + ROI ----
         self.canny_low  = 14
@@ -179,8 +204,8 @@ class LaneDetector(Node):
 
         # ---- Kalman filter on target pixel ----
         self.kalman_enable      = True
-        self.kalman_q           = 30  / 10.0
-        self.kalman_r           = 100 / 10.0
+        self.kalman_q           = 5
+        self.kalman_r           = 10
         self.kalman_gate_px     = 80
         self.kalman_max_predict = 30
         self.kf_target = _TargetKalman()
@@ -235,7 +260,19 @@ class LaneDetector(Node):
                            [0.0, 0.0, 1.0]])
         self._last_frame_shape = (h, w)
 
-    def lane_average(self, image, lines):
+    def _segment_is_yellow(self, x1, y1, x2, y2, yellow_in_roi):
+        """True if enough points sampled along the segment fall on yellow.
+
+        yellow_in_roi must already be AND-ed with the ROI so the yellowish
+        camera center (outside the ROI) cannot mislabel a line.
+        """
+        h, w = yellow_in_roi.shape[:2]
+        n = max(2, int(np.hypot(x2 - x1, y2 - y1)))
+        xs = np.clip(np.linspace(x1, x2, n).astype(np.int32), 0, w - 1)
+        ys = np.clip(np.linspace(y1, y2, n).astype(np.int32), 0, h - 1)
+        return float(np.mean(yellow_in_roi[ys, xs] > 0)) >= self.yellow_sample_frac
+
+    def lane_average(self, image, lines, yellow_in_roi=None):
         left_fits = []
         right_fits = []
 
@@ -248,7 +285,13 @@ class LaneDetector(Node):
                 continue
             parameters = np.polyfit((x1, x2), (y1, y2), 1)
             slope, intersect = parameters[0], parameters[1]
-            if slope < 0:
+            # Yellow-left guard: a yellow segment can never be the right line,
+            # so force it into the left group regardless of slope. White
+            # segments keep the original, stable slope-based split.
+            if (yellow_in_roi is not None
+                    and self._segment_is_yellow(x1, y1, x2, y2, yellow_in_roi)):
+                left_fits.append((slope, intersect))
+            elif slope < 0:
                 left_fits.append((slope, intersect))
             else:
                 right_fits.append((slope, intersect))
@@ -277,7 +320,10 @@ class LaneDetector(Node):
         if not np.isfinite(m) or abs(m) < 0.1:
             return None
         y1 = image.shape[0]
-        y2 = int(y1 * 0.56)
+        # 0.72 keeps the line's far endpoint near the top of the ROI (y~295)
+        # instead of extrapolating to y~230, so the target point isn't aimed
+        # far above the detected region (was 0.56 -> turned into curves early).
+        y2 = int(y1 * 0.72)
         x1 = (y1 - b) / m
         x2 = (y2 - b) / m
         img_w = image.shape[1]
@@ -336,8 +382,21 @@ class LaneDetector(Node):
     def update_lane_half_width(self, left_line, right_line):
         if left_line is None or right_line is None:
             return
+        # Only learn the half-lane width in the normal configuration (left line
+        # genuinely to the left of the right one). When inverted -- e.g. yellow
+        # seen on the right in the opposite lane -- this would measure across
+        # both lanes, so keep the last good value instead.
+        if right_line[2] <= left_line[2]:
+            return
         measured_half_width_px = 0.5 * abs(float(right_line[2] - left_line[2]))
         if measured_half_width_px <= 1.0:
+            return
+        # Reject diverging-white outliers: if the new width is far from the
+        # running estimate (a fork), ignore it so the white can't inflate the
+        # offset and pull the car off the yellow's direction.
+        ref = self.dynamic_lane_half_width_px
+        ratio = float(max(1.0, self.lane_width_max_ratio))
+        if ref > 1.0 and not (ref / ratio <= measured_half_width_px <= ref * ratio):
             return
         alpha = float(np.clip(self.lane_half_width_ema_alpha, 0.0, 1.0))
         self.dynamic_lane_half_width_px = (
@@ -363,6 +422,115 @@ class LaneDetector(Node):
         elif right_line is not None:
             self.last_detected_lane = -0.75
             self.last_target_pixel = [int(right_line[2] - half_w * (1.0 + bias)), right_line[3]]
+            self.waiting_cycles = 0
+        else:
+            self.waiting_cycles += 1
+
+        return self.last_target_pixel
+
+    def _fit_line_robust(self, image, points):
+        """Robust line fit through all segment endpoints (Huber norm).
+
+        cv2.fitLine handles near-vertical lane lines (where averaging polyfit
+        slopes blows up) and Huber down-weights stray/outlier segments.
+        Returns [x_bottom, y_bottom, x_top, y_top] or None.
+        """
+        if len(points) < 2:
+            return None
+        pts = np.asarray(points, dtype=np.float32)
+        vx, vy, x0, y0 = cv2.fitLine(pts, cv2.DIST_HUBER, 0, 0.01, 0.01).flatten()
+        # Reject near-horizontal fits (|dy/dx| < 0.1), like point_generator did.
+        if abs(vy) < 0.1 * abs(vx) or abs(vy) < 1e-6:
+            return None
+        y_bottom = image.shape[0]
+        y_top = int(y_bottom * 0.72)
+        x_bottom = x0 + (y_bottom - y0) * vx / vy
+        x_top = x0 + (y_top - y0) * vx / vy
+        img_w = image.shape[1]
+        if (not np.isfinite(x_bottom) or not np.isfinite(x_top)
+                or abs(x_bottom) > 3 * img_w or abs(x_top) > 3 * img_w):
+            return None
+        return [int(x_bottom), int(y_bottom), int(x_top), int(y_top)]
+
+    def _line_yellowness(self, line, yellow_in_roi):
+        """Fraction of points sampled along a line that fall on yellow."""
+        h, w = yellow_in_roi.shape[:2]
+        x1, y1, x2, y2 = line
+        n = max(2, int(np.hypot(x2 - x1, y2 - y1)))
+        xs = np.clip(np.linspace(x1, x2, n).astype(np.int32), 0, w - 1)
+        ys = np.clip(np.linspace(y1, y2, n).astype(np.int32), 0, h - 1)
+        return float(np.mean(yellow_in_roi[ys, xs] > 0))
+
+    def lane_by_color(self, image, lines, yellow_in_roi):
+        """Build lines from the COMBINED mask, then label each by majority
+        colour.
+
+        Segments are grouped left/right by slope and fitted whole, so a white
+        reflection in the middle of the yellow line doesn't split it. Each
+        fitted line is then sampled: the more-yellow one (if yellow enough)
+        becomes the yellow/left reference, the other the white/right line.
+        """
+        if lines is None:
+            return [None, None, None]
+
+        left_pts, right_pts = [], []
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            if x1 == x2:
+                continue
+            slope = (y2 - y1) / float(x2 - x1)
+            if slope < 0:
+                left_pts.extend(((x1, y1), (x2, y2)))
+            else:
+                right_pts.extend(((x1, y1), (x2, y2)))
+        line_a = self._fit_line_robust(image, left_pts)
+        line_b = self._fit_line_robust(image, right_pts)
+
+        # Label by majority colour: the most-yellow line (above threshold) wins
+        # the yellow slot, the other becomes white. If neither is yellow enough,
+        # the detected line(s) are treated as white.
+        a_f = self._line_yellowness(line_a, yellow_in_roi) if line_a is not None else -1.0
+        b_f = self._line_yellowness(line_b, yellow_in_roi) if line_b is not None else -1.0
+        yellow_line = white_line = None
+        if a_f >= b_f and a_f >= self.yellow_sample_frac:
+            yellow_line, white_line = line_a, line_b
+        elif b_f > a_f and b_f >= self.yellow_sample_frac:
+            yellow_line, white_line = line_b, line_a
+        else:
+            white_line = line_a if line_a is not None else line_b
+
+        center_line = None
+        if yellow_line is not None and white_line is not None:
+            center_line = [
+                int((yellow_line[0] + white_line[0]) / 2),
+                yellow_line[1],
+                int((yellow_line[2] + white_line[2]) / 2),
+                yellow_line[3],
+            ]
+        return [yellow_line, white_line, center_line]
+
+    def select_target_anchored_yellow(self, yellow_line, white_line):
+        """Target anchored on the always-solid yellow line.
+
+        Places the target ~half a lane to the RIGHT of the yellow line, i.e.
+        the yellow stays on the car's left. If the yellow ends up on the right
+        (opposite lane), the same offset puts the target further right and
+        steers the car back into the correct lane. White is only a fallback
+        for frames where the (dashed) white line is all that's visible.
+        """
+        bias = self.lane_lateral_bias   # >0 hugs slightly toward the yellow
+        half_w = self.dynamic_lane_half_width_px
+
+        if self.waiting_cycles > self.max_waiting_cycles:
+            return None
+
+        if yellow_line is not None:
+            self.last_target_pixel = [int(yellow_line[2] + half_w * (1.0 - bias)),
+                                      yellow_line[3]]
+            self.waiting_cycles = 0
+        elif white_line is not None:
+            self.last_target_pixel = [int(white_line[2] - half_w * (1.0 + bias)),
+                                      white_line[3]]
             self.waiting_cycles = 0
         else:
             self.waiting_cycles += 1
@@ -452,24 +620,19 @@ class LaneDetector(Node):
             white_mask = self.color_segment(hls, self.gray_lower, self.gray_upper)
             yellow_mask = self.color_segment(hls, self.yellow_lower, self.yellow_upper)
 
-            # 3. Clean combined mask: median + open + close.
+            # 3. Combined mask (yellow OR white), cleaned + ROI. Joined for all
+            #    line generation so a white reflection in the middle of the
+            #    yellow line doesn't split it -- the line is built whole and
+            #    labelled by majority colour afterwards (lane_by_color).
             masked_colors = self._clean_mask(cv2.bitwise_or(white_mask, yellow_mask))
-
-            # 4. ROI.
             roi_mask = np.zeros_like(masked_colors)
             cv2.fillPoly(roi_mask, poligon, 255)
             masked_in_roi = cv2.bitwise_and(masked_colors, roi_mask)
 
-            # 5. Canny on grayscale of preprocessed BGR, AND-ed with the mask
-            #    so Hough only sees edges that land on a line-color pixel inside
-            #    the ROI. canny_low <= 0 disables Canny.
-            if self.canny_low > 0 and self.canny_high > self.canny_low:
-                gray = cv2.cvtColor(pp, cv2.COLOR_BGR2GRAY)
-                gray = cv2.GaussianBlur(gray, (5, 5), 1.4)
-                edges_full = cv2.Canny(gray, self.canny_low, self.canny_high)
-                hough_input = cv2.bitwise_and(edges_full, masked_in_roi)
-            else:
-                hough_input = masked_in_roi
+            # 4. Hough on the EDGES of the combined MASK (binary), not a
+            #    grayscale Canny: the mask boundary is luminance-independent, so
+            #    low-contrast yellow survives instead of being gated out.
+            hough_input = cv2.Canny(masked_in_roi, 50, 150)
 
             lines = cv2.HoughLinesP(
                 hough_input, 1, np.pi / 180,
@@ -478,9 +641,22 @@ class LaneDetector(Node):
                 maxLineGap=self.hough_max_line_gap,
             )
 
-            left_line, right_line, center_line = self.lane_average(src, lines)
-            self.update_lane_half_width(left_line, right_line)
-            raw_target_pixel = self.select_target_pixel(left_line, right_line, center_line)
+            if self.color_side_classify:
+                # Strict color sides + target anchored on the solid yellow line.
+                yellow_in_roi = cv2.bitwise_and(yellow_mask, roi_mask)
+                left_line, right_line, center_line = self.lane_by_color(
+                    src, lines, yellow_in_roi)
+                self.update_lane_half_width(left_line, right_line)
+                raw_target_pixel = self.select_target_anchored_yellow(
+                    left_line, right_line)
+            else:
+                yellow_in_roi = (cv2.bitwise_and(yellow_mask, roi_mask)
+                                 if self.yellow_left_guard else None)
+                left_line, right_line, center_line = self.lane_average(
+                    src, lines, yellow_in_roi)
+                self.update_lane_half_width(left_line, right_line)
+                raw_target_pixel = self.select_target_pixel(
+                    left_line, right_line, center_line)
 
             # 6. Kalman smoothing + missing-measurement extrapolation.
             target_velocity_px = None  # (du, dv) en px/frame del estado KF

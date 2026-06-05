@@ -26,6 +26,7 @@ setup(
     entry_points={
         'console_scripts': [
             'command_mux = qcar_control.command_mux:main',
+            'overtake_supervisor = qcar_control.overtake_supervisor:main',
         ],
     },
 )
