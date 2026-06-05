@@ -11,14 +11,16 @@ lane_follower_q:
     wheelbase: 0.256   # meters (distance between axles)
 
     # --- Dynamic lookahead ---
-    lookahead_min: 0.18
-    lookahead_max: 0.35
-    lookahead_base: 0.20
-    lookahead_speed_gain: 0.80
+    # 0.24 m: compromise between tighter turns (0.20) and stability (0.30)
+    lookahead_min: 0.20
+    lookahead_max: 0.40
+    lookahead_base: 0.24
+    lookahead_speed_gain: 0.60
+
 
     # --- Steering limits ---
-    max_steering_angle: 0.50   # radians (~28.6 deg)
-    curve_threshold: 0.20      # radians — above this = curve speed
+    max_steering_angle: 0.35
+    curve_threshold: 0.20
 
     # --- Speed ---
     speed_straight: 0.070   # m/s on straight sections
@@ -26,3 +28,6 @@ lane_follower_q:
 
     # Flip to +1.0 if the car steers in the wrong direction.
     steering_sign: -1.0
+
+    # EMA filter on steering output: 0.0=raw, 0.5=moderate, 0.8=heavy smoothing
+    steering_lpf_alpha: 0.54
