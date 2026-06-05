@@ -83,8 +83,12 @@ class LaneDetector(Node):
         self.lane_half_width_ema_alpha   = 0.2
         self.dynamic_lane_half_width_px  = self.lane_half_width_px
         self.lane_lateral_bias           = 0.0
-        # 0.5 = exact center; < 0.5 = biased toward left line
-        self.left_lane_blend            = 0.42
+        # Distance to drive to the right of the left (yellow) line. Always applied.
+        # 25 px @ 500 px/m = 5 cm
+        self.left_follow_offset_px      = 25
+        # Minimum gap to keep from the right (gray) line when it is visible.
+        # 20 px @ 500 px/m = 4 cm
+        self.right_safety_margin_px     = 20
 
 
 
@@ -113,7 +117,7 @@ class LaneDetector(Node):
         self.mask_open_k   = 3
         self.mask_close_k  = 5
         # White blobs larger than this area (px²) are treated as walls and removed.
-        self.white_max_blob_area = 210
+        self.white_max_blob_area = 200
 
         # ---- Canny (applied on BEV grayscale) ----
         self.canny_low  = 14
@@ -331,10 +335,12 @@ class LaneDetector(Node):
         bev_w  = self.bev_size[0]
 
         if left_line is not None:
+            # Always follow yellow at a fixed distance.
+            target_x = left_line[2] + self.left_follow_offset_px
+            # Gray line as safety: prevent crossing too close to the right boundary.
             if right_line is not None:
-                target_x = int(left_line[2] + (right_line[2] - left_line[2]) * self.left_lane_blend)
-            else:
-                target_x = int(left_line[2] + half_w * self.left_lane_blend * 2.0)
+                right_limit = right_line[2] - self.right_safety_margin_px
+                target_x = min(target_x, right_limit)
             target_x = int(np.clip(target_x, 0, bev_w - 1))
             self.last_detected_lane = 0.5
             self.last_target_pixel  = [target_x, left_line[3]]
