@@ -18,7 +18,7 @@ lane_follower_q:
     lookahead_speed_gain: 0.60
 
     # --- Steering limits ---
-    max_steering_angle: 0.40
+    max_steering_angle: 0.31
     curve_threshold: 0.20
 
     # --- Speed (curve MUST be <= straight) ---
@@ -27,4 +27,4 @@ lane_follower_q:
 
     steering_sign: -1.0
     # EMA filter on steering output: 0.0=raw, 0.5=moderate, 0.8=heavy smoothing
-    steering_lpf_alpha: 0.80
+    steering_lpf_alpha: 0.6

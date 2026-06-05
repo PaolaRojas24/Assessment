@@ -13,9 +13,9 @@ class LaneFollowerQ(Node):
         self.declare_parameter('target_point_topic', '/lane_target_point_m')
         self.declare_parameter('cmd_topic', '/qcar2_motor_speed_cmd')
         self.declare_parameter('wheelbase', 0.256)
-        self.declare_parameter('lookahead_min', 0.16)
-        self.declare_parameter('lookahead_max', 0.34)
-        self.declare_parameter('lookahead_base', 0.20)
+        self.declare_parameter('lookahead_min', 0.25)
+        self.declare_parameter('lookahead_max', 0.40)
+        self.declare_parameter('lookahead_base', 0.30)
         self.declare_parameter('lookahead_speed_gain', 0.80)
         self.declare_parameter('max_steering_angle', 0.5)
         self.declare_parameter('curve_threshold', 0.2)
@@ -118,7 +118,8 @@ class LaneFollowerQ(Node):
         elif self.platform == 'qcar2':
             cmd = MotorCommands()
             cmd.motor_names = ["steering_angle", "motor_throttle"]
-            cmd.values = [self.steering_sign * steering_angle, speed]
+            # cmd.values = [self.steering_sign * steering_angle, speed]
+            cmd.values = [self.steering_sign * self._steering_filtered,speed]
             self.cmd_pub.publish(cmd)
 
             self.last_speed_command = speed

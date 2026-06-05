@@ -10,8 +10,7 @@ Pipeline:
   6. HoughLinesP in BEV space (lines are straight/near-straight)
   7. Classify lines by X position (left half / right half of BEV)
   8. Fit x = f(y) per lane (robust for near-vertical lines)
-  9. Kalman smoothing of target pixel (BEV coords)
- 10. Direct BEV-pixel → metric conversion (no perspectiveTransform on target)
+  9. Direct BEV-pixel → metric conversion (no perspectiveTransform on target)
 """
 
 import rclpy
@@ -23,70 +22,6 @@ from std_msgs.msg import Float32MultiArray
 import numpy as np
 import cv2
 
-
-class _TargetKalman:
-    """Constant-velocity Kalman filter on the (u, v) target pixel."""
-
-    def __init__(self):
-        self.kf = cv2.KalmanFilter(4, 2)
-        self.kf.transitionMatrix = np.array([
-            [1, 0, 1, 0],
-            [0, 1, 0, 1],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1],
-        ], dtype=np.float32)
-        self.kf.measurementMatrix = np.array([
-            [1, 0, 0, 0],
-            [0, 1, 0, 0],
-        ], dtype=np.float32)
-        self.set_noise(3.0, 10.0)
-        self.reset()
-
-    def set_noise(self, q, r):
-        self.kf.processNoiseCov = np.eye(4, dtype=np.float32) * float(max(1e-3, q))
-        self.kf.measurementNoiseCov = np.eye(2, dtype=np.float32) * float(max(1e-3, r))
-
-    def reset(self):
-        self.initialized = False
-        self.predict_count = 0
-        self.kf.statePost = np.zeros((4, 1), dtype=np.float32)
-        self.kf.errorCovPost = np.eye(4, dtype=np.float32) * 100.0
-
-    def step(self, measurement, gate_px=0, max_predict=30):
-        if not self.initialized:
-            if measurement is None:
-                return None, False
-            u, v = measurement
-            self.kf.statePost = np.array(
-                [[float(u)], [float(v)], [0.0], [0.0]], dtype=np.float32)
-            self.initialized = True
-            self.predict_count = 0
-            return (int(u), int(v)), True
-
-        pred = self.kf.predict()
-        pu, pv = float(pred[0]), float(pred[1])
-
-        if measurement is None:
-            self.predict_count += 1
-            if self.predict_count > max_predict:
-                self.initialized = False
-                return None, False
-            return (int(pu), int(pv)), False
-
-        u, v = measurement
-        if gate_px > 0:
-            dist = float(np.hypot(u - pu, v - pv))
-            if dist > gate_px:
-                self.predict_count += 1
-                if self.predict_count > max_predict:
-                    self.initialized = False
-                    return None, False
-                return (int(pu), int(pv)), False
-
-        meas = np.array([[float(u)], [float(v)]], dtype=np.float32)
-        corr = self.kf.correct(meas)
-        self.predict_count = 0
-        return (int(corr[0]), int(corr[1])), True
 
 
 class LaneDetector(Node):
@@ -101,7 +36,7 @@ class LaneDetector(Node):
         mask_topic      = '/qcar/line_follower/mask'
 
         self.enable_display = False
-        overlay_publish_hz  = 15.0
+        overlay_publish_hz  = 12.0
         self.overlay_size   = (320, 240)
         self.overlay_period_frames = max(1, int(round(15.0 / overlay_publish_hz)))
 
@@ -144,16 +79,19 @@ class LaneDetector(Node):
         # Fixed pixel offset from the detected line (follow_line_directly only).
         # Positive = right of line, negative = left. 500 px/m → 25 px = 5 cm.
         self.line_offset_px              = 0
-        self.lane_half_width_px         = 70.0
+        self.lane_half_width_px         = 50.0
         self.lane_half_width_ema_alpha   = 0.2
         self.dynamic_lane_half_width_px  = self.lane_half_width_px
         self.lane_lateral_bias           = 0.0
+        # 0.5 = exact center; < 0.5 = biased toward left line
+        self.left_lane_blend            = 0.42
+
 
 
         # ---- Hough — tuned for BEV (217×52 px) ----
-        self.hough_threshold       = 10
-        self.hough_min_line_length = 8
-        self.hough_max_line_gap    = 5
+        self.hough_threshold       = 12   # more votes required → fewer spurious lines
+        self.hough_min_line_length = 12   # 8 px was too short (noise); 14 ≈ 27 % of BEV height
+        self.hough_max_line_gap    = 6
 
         # ---- Preprocess ----
         self.wb_enable  = True
@@ -175,20 +113,11 @@ class LaneDetector(Node):
         self.mask_open_k   = 3
         self.mask_close_k  = 5
         # White blobs larger than this area (px²) are treated as walls and removed.
-        self.white_max_blob_area = 280
+        self.white_max_blob_area = 210
 
         # ---- Canny (applied on BEV grayscale) ----
         self.canny_low  = 14
         self.canny_high = 75
-
-        # ---- Kalman ----
-        self.kalman_enable      = True
-        self.kalman_q           = 30  / 10.0
-        self.kalman_r           = 150 / 10.0
-        self.kalman_gate_px     = 80
-        self.kalman_max_predict = 50   # 4 s @ 15 Hz — survive brief line loss in curves
-        self.kf_target = _TargetKalman()
-        self.kf_target.set_noise(self.kalman_q, self.kalman_r)
 
         # ---- Target-selection state ----
         self.last_detected_lane = 1
@@ -205,6 +134,10 @@ class LaneDetector(Node):
             max(1, int(np.ceil(bev_w_m * self.bev_pixels_per_meter))),
             max(1, int(np.ceil(bev_h_m * self.bev_pixels_per_meter))),
         )
+
+        # Pre-compute constant homography and polygon (never change between frames).
+        self._polygon  = self.roi_polygon_points_px.astype(np.int32).reshape((1, 4, 2))
+        self._h_matrix = self.get_homography_matrix(self._polygon)
 
         qos_in = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
@@ -313,7 +246,7 @@ class LaneDetector(Node):
 
         Line format: [x_far, y_far, x_target, y_target]
           - (x_far, y_far)       = endpoint at far edge of BEV (y = bev_h-1)
-          - (x_target, y_target) = lookahead point at 60 % BEV depth
+          - (x_target, y_target) = lookahead point at 65 % BEV depth
         """
         def fit(pts):
             if len(pts) < 2:
@@ -324,7 +257,7 @@ class LaneDetector(Node):
             except Exception:
                 return None
             y_far    = bev_h - 1
-            y_target = int(bev_h * 0.5)
+            y_target = int(bev_h * 0.65)
             lim = 2 * bev_w
             x_far    = int(np.clip(a * y_far    + b, -lim, lim))
             x_target = int(np.clip(a * y_target + b, -lim, lim))
@@ -372,36 +305,48 @@ class LaneDetector(Node):
     def update_lane_half_width(self, left_line, right_line):
         if left_line is None or right_line is None:
             return
-        half_w = 0.5 * abs(float(right_line[2] - left_line[2]))
-        if half_w <= 1.0:
+        raw_width = float(right_line[2] - left_line[2])
+        if not (60.0 < raw_width < 140.0):
             return
+        half_w = raw_width * 0.5
         a = float(np.clip(self.lane_half_width_ema_alpha, 0.0, 1.0))
         self.dynamic_lane_half_width_px = (
             a * half_w + (1.0 - a) * self.dynamic_lane_half_width_px)
 
     def select_target_pixel(self, left_line, right_line, center_line):
-        bias   = self.lane_lateral_bias * self.last_detected_lane
-        half_w = self.dynamic_lane_half_width_px
-
         if self.waiting_cycles > self.max_waiting_cycles:
             return None
 
-        if center_line is not None:
-            self.last_detected_lane = 1
-            offset = self.line_offset_px if self.follow_line_directly else int(bias * half_w)
-            self.last_target_pixel  = [
-                int(center_line[2] + offset), center_line[3]]
-            self.waiting_cycles = 0
-        elif left_line is not None:
+        if self.follow_line_directly:
+            if center_line is not None:
+                self.last_detected_lane = 1
+                self.last_target_pixel  = [
+                    int(center_line[2] + self.line_offset_px), center_line[3]]
+                self.waiting_cycles = 0
+            else:
+                self.waiting_cycles += 1
+            return self.last_target_pixel
+
+        half_w = self.dynamic_lane_half_width_px
+        bev_w  = self.bev_size[0]
+
+        if left_line is not None:
+            if right_line is not None:
+                target_x = int(left_line[2] + (right_line[2] - left_line[2]) * self.left_lane_blend)
+            else:
+                target_x = int(left_line[2] + half_w * self.left_lane_blend * 2.0)
+            target_x = int(np.clip(target_x, 0, bev_w - 1))
             self.last_detected_lane = 0.5
-            self.last_target_pixel  = [
-                int(left_line[2] + half_w * (1.0 - bias)), left_line[3]]
-            self.waiting_cycles = 0
+            self.last_target_pixel  = [target_x, left_line[3]]
+            self.waiting_cycles     = 0
+
         elif right_line is not None:
+            # Fallback: only right line visible — estimate center from the right boundary.
+            target_x = int(np.clip(right_line[2] - half_w, 0, bev_w - 1))
             self.last_detected_lane = -0.75
-            self.last_target_pixel  = [
-                int(right_line[2] - half_w * (1.0 + bias)), right_line[3]]
+            self.last_target_pixel  = [target_x, right_line[3]]
             self.waiting_cycles = 0
+
         else:
             self.waiting_cycles += 1
 
@@ -468,8 +413,8 @@ class LaneDetector(Node):
             if self._last_frame_shape != (h, w):
                 self._build_intrinsics(w, h)
 
-            polygon  = self.roi_polygon_points_px.astype(np.int32).reshape((1, 4, 2))
-            h_matrix = self.get_homography_matrix(polygon)
+            polygon  = self._polygon
+            h_matrix = self._h_matrix
 
             # 1. Preprocess on full-resolution perspective frame
             pp = self._preprocess(src)
@@ -485,11 +430,6 @@ class LaneDetector(Node):
             yellow_mask = self.color_segment(hls_bev, self.yellow_lower, self.yellow_upper)
             white_filtered = self._remove_large_blobs(white_mask, self.white_max_blob_area)
             bev_mask    = self._clean_mask(cv2.bitwise_or(white_filtered, yellow_mask))
-
-            # Keep perspective masks for the colour overlay visualization
-            hls_persp        = cv2.cvtColor(pp, cv2.COLOR_BGR2HLS)
-            white_mask_persp  = self.color_segment(hls_persp, self.gray_lower,   self.gray_upper)
-            yellow_mask_persp = self.color_segment(hls_persp, self.yellow_lower, self.yellow_upper)
 
             # 4. Optional Canny on BEV grayscale AND-ed with BEV mask
             if self.canny_low > 0 and self.canny_high > self.canny_low:
@@ -511,26 +451,42 @@ class LaneDetector(Node):
 
             # 7. Lane fitting (BEV-aware: classify by X, fit x = f(y))
             left_line, right_line, center_line = self.lane_average_bev(bev_w, bev_h, lines)
+
+            # Discard right line if width is physically impossible (misclassification / artifact).
+            if left_line is not None and right_line is not None:
+                lane_width = right_line[2] - left_line[2]
+                if lane_width < 40 or lane_width > 140:
+                    right_line = None
+                    center_line = None
+
             self.update_lane_half_width(left_line, right_line)
             raw_target = self.select_target_pixel(left_line, right_line, center_line)
 
-            # 8. Kalman smoothing (coordinates in BEV pixels)
-            target_vel = None
-            if self.kalman_enable:
-                meas     = tuple(raw_target) if raw_target is not None else None
-                filtered, _ = self.kf_target.step(
-                    meas,
-                    gate_px=self.kalman_gate_px,
-                    max_predict=self.kalman_max_predict,
-                )
-                target_px = list(filtered) if filtered is not None else None
-                if target_px is not None and self.kf_target.initialized:
-                    state    = self.kf_target.kf.statePost
-                    target_vel = (float(state[2, 0]), float(state[3, 0]))
-            else:
-                target_px = raw_target
+            if left_line is None:
+                self.get_logger().info("LEFT LOST")
 
-            # 9. BEV pixel → metric (direct, no perspectiveTransform)
+            if right_line is None:
+                self.get_logger().info("RIGHT LOST")
+
+            if left_line is not None and right_line is not None:
+                lane_width = right_line[2] - left_line[2]
+                self.get_logger().info(
+                    f"width={lane_width:.1f}px"
+    )
+
+            # Periodic debug log: shows what's detected and the estimated half-width.
+            if self._frame_count % 30 == 0:
+                lx = left_line[2]  if left_line  is not None else None
+                rx = right_line[2] if right_line is not None else None
+                tx = raw_target[0] if raw_target is not None else None
+                self.get_logger().info(
+                    f'[lane] L={lx} R={rx} target_x={tx} '
+                    f'half_w={self.dynamic_lane_half_width_px:.1f}'
+                )
+
+            target_px = raw_target
+
+            # 8. BEV pixel → metric (direct, no perspectiveTransform)
             target_msg = Float32MultiArray()
             if target_px is not None:
                 tx, ty = self._bev_pixel_to_m(target_px)
@@ -575,22 +531,17 @@ class LaneDetector(Node):
                 cv2.putText(bev_bgr,
                             f"x={target_msg.data[0]:.2f} y={target_msg.data[1]:.2f}",
                             (4, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
-                if target_vel is not None:
-                    du, dv = target_vel
-                    if np.hypot(du, dv) > 0.5:
-                        ax = target_px[0] + du * 8.0
-                        ay = target_px[1] + dv * 8.0
-                        cv2.arrowedLine(bev_bgr,
-                                        self._safe_pt(target_px[0], target_px[1]),
-                                        self._safe_pt(ax, ay),
-                                        (0, 200, 255), 2, tipLength=0.3)
-
-            # Perspective overlay: original frame + ROI polygon
-            line_image = src.copy()
-            cv2.polylines(line_image, polygon, isClosed=True,
-                          color=(255, 255, 0), thickness=1)
 
             if need_overlay:
+                # Perspective overlay: original frame + ROI polygon
+                line_image = src.copy()
+                cv2.polylines(line_image, polygon, isClosed=True,
+                              color=(255, 255, 0), thickness=1)
+                # Perspective masks computed only when needed for the overlay.
+                hls_persp         = cv2.cvtColor(pp, cv2.COLOR_BGR2HLS)
+                white_mask_persp  = self.color_segment(hls_persp, self.gray_lower,   self.gray_upper)
+                yellow_mask_persp = self.color_segment(hls_persp, self.yellow_lower, self.yellow_upper)
+
                 # Flip BEV for human readability (near at bottom, far at top)
                 bev_display = cv2.flip(bev_bgr, 0)
 
@@ -605,7 +556,9 @@ class LaneDetector(Node):
                 self._publish_image(self.mask_pub,    color_mask,  resize_to=self.overlay_size)
 
             if self.enable_display:
-                cv2.imshow('Original + ROI', line_image)
+                disp = src.copy()
+                cv2.polylines(disp, polygon, isClosed=True, color=(255, 255, 0), thickness=1)
+                cv2.imshow('Original + ROI', disp)
                 cv2.imshow('BEV detections', cv2.flip(bev_bgr, 0))
                 cv2.waitKey(1)
 
