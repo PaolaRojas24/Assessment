@@ -61,10 +61,10 @@ class LaneDetector(Node):
         # ROI trapezoid in the perspective image (bottom-left, top-left,
         # top-right, bottom-right). Maps onto the BEV destination above.
         self.roi_polygon_points_px = np.array([
-            0.0,   410.0,
-            20.0,  239.0,
-            780.0, 239.0,
-            820.0, 410.0,
+            80.0,  410.0,
+            130.0, 239.0,
+            640.0, 239.0,
+            700.0, 410.0,
         ], dtype=np.float32).reshape((4, 2))
 
         # ---- Physical car geometry ----
@@ -84,42 +84,29 @@ class LaneDetector(Node):
         self.dynamic_lane_half_width_px  = self.lane_half_width_px
         self.lane_lateral_bias           = 0.0
         # Distance to drive to the right of the left (yellow) line. Always applied.
-        # 25 px @ 500 px/m = 5 cm
-        self.left_follow_offset_px      = 25
+        # 40 px @ 500 px/m = 8 cm  (matches previous stable half_w*blend*2 value)
+        self.left_follow_offset_px      = 40
         # Minimum gap to keep from the right (gray) line when it is visible.
-        # 20 px @ 500 px/m = 4 cm
-        self.right_safety_margin_px     = 20
+        # 25 px @ 500 px/m = 5 cm
+        self.right_safety_margin_px     = 25
 
 
 
         # ---- Hough — tuned for BEV (217×52 px) ----
-        self.hough_threshold       = 12   # more votes required → fewer spurious lines
-        self.hough_min_line_length = 12   # 8 px was too short (noise); 14 ≈ 27 % of BEV height
-        self.hough_max_line_gap    = 6
+        self.hough_threshold       = 10
+        self.hough_min_line_length = 8
+        self.hough_max_line_gap    = 8
 
         # ---- Preprocess ----
         self.wb_enable  = True
         self.wb_p       = 3.0   # Minkowski order: 1=Gray World, 6=Shades of Gray
-        self.clahe_clip = 2.0
-        self.clahe_tile = 8
+        self.clahe_clip = 1.0
+        self.clahe_tile = 12
 
-        # ---- HLS colour thresholds ----
-        # White completely disabled — walls pass the white threshold and create
-        # false left-lane detections that cause oscillation.
-        self.gray_lower   = np.array([0,   111, 0],  dtype=np.uint8)
-        self.gray_upper   = np.array([179, 230, 65], dtype=np.uint8)
-        self.yellow_lower = np.array([4,   19,  50], dtype=np.uint8)
-        self.yellow_upper = np.array([35,  225, 255], dtype=np.uint8)
+        # ---- Brightness threshold (replaces colour masks) ----
+        self.bright_thresh = 110
 
-        # ---- Mask morphology ----
-        # open_k=3 preserves thin lines in the small BEV (5×5 erases them).
-        self.mask_median_k = 5
-        self.mask_open_k   = 3
-        self.mask_close_k  = 5
-        # White blobs larger than this area (px²) are treated as walls and removed.
-        self.white_max_blob_area = 200
-
-        # ---- Canny (applied on BEV grayscale) ----
+        # ---- Canny (applied on BEV grayscale, AND-ed with bright mask) ----
         self.canny_low  = 14
         self.canny_high = 75
 
@@ -129,6 +116,14 @@ class LaneDetector(Node):
         self.max_waiting_cycles = 500
         self.waiting_cycles     = 0
         self._frame_count       = 0
+        self._scan_pts          = []
+        # Suppress target updates smaller than this (px) — kills Hough noise
+        # without adding temporal lag. 4 px = 8 mm at 500 px/m.
+        self.target_deadband_px = 6
+        # BEV x cutoff for yellow line: reject detections right of this column.
+        # Real line is at x≈20-70; camera-burn artifact is at x≈90-130.
+        self.yellow_bev_max_x = 130
+
 
         bev_w_m = float(self.bev_dst_points_m[:, 0].max() -
                         self.bev_dst_points_m[:, 0].min())
@@ -217,6 +212,58 @@ class LaneDetector(Node):
                 out[labels == i] = 0
         return out
 
+    def _leftmost_cluster_center(self, xs, gap=8):
+        """Center x of the leftmost connected cluster in a sorted x array."""
+        if len(xs) == 0:
+            return None
+        start = int(xs[0])
+        end   = int(xs[0])
+        for x in xs[1:]:
+            if int(x) - end <= gap:
+                end = int(x)
+            else:
+                break
+        return (start + end) // 2
+
+    def detect_yellow_line_bev(self, yellow_mask, bev_h, bev_w, n_slices=7):
+        """Scan yellow mask at n_slices horizontal bands.
+        Each band: take the leftmost yellow cluster — naturally rejects the
+        camera-burn artifact (burn is near x=108, real line is << 108).
+        Fit x = a·y + b through valid points; evaluate at two depths.
+        Returns [x_far, y_far, x_target, y_target] or None.
+        Stores detected scan points in self._scan_pts for visualization."""
+        pts = []
+        for i in range(n_slices):
+            y0 = int(i       * bev_h / n_slices)
+            y1 = max(y0 + 1, int((i + 1) * bev_h / n_slices))
+            col_sum = yellow_mask[y0:y1, :].sum(axis=0).astype(np.int32)
+            nonzero = np.where(col_sum > 0)[0]
+            if len(nonzero) == 0:
+                continue
+            cx = self._leftmost_cluster_center(nonzero)
+            if cx is None or cx >= int(bev_w * 0.68):
+                continue
+            pts.append(((y0 + y1) // 2, cx))
+
+        self._scan_pts = pts  # store for overlay
+
+        if len(pts) < 2:
+            return None
+
+        ys, xs = zip(*pts)
+        try:
+            a, b = np.polyfit(ys, xs, 1)
+        except Exception:
+            return None
+
+        y_far    = bev_h - 1
+        y_target = int(bev_h * 0.45)
+        lim      = 2 * bev_w
+        return [
+            int(np.clip(a * y_far    + b, -lim, lim)), y_far,
+            int(np.clip(a * y_target + b, -lim, lim)), y_target,
+        ]
+
     def _clean_mask(self, mask):
         k = self.mask_median_k
         if k >= 3:
@@ -261,7 +308,7 @@ class LaneDetector(Node):
             except Exception:
                 return None
             y_far    = bev_h - 1
-            y_target = int(bev_h * 0.65)
+            y_target = int(bev_h * 0.40)
             lim = 2 * bev_w
             x_far    = int(np.clip(a * y_far    + b, -lim, lim))
             x_target = int(np.clip(a * y_target + b, -lim, lim))
@@ -281,7 +328,7 @@ class LaneDetector(Node):
 
         left_pts  = []
         right_pts = []
-        mid_x = bev_w * 0.50
+        mid_x = bev_w * 0.62
 
         if lines is not None:
             for line in lines:
@@ -317,42 +364,20 @@ class LaneDetector(Node):
         self.dynamic_lane_half_width_px = (
             a * half_w + (1.0 - a) * self.dynamic_lane_half_width_px)
 
-    def select_target_pixel(self, left_line, right_line, center_line):
+    def select_target_pixel(self, left_line):
         if self.waiting_cycles > self.max_waiting_cycles:
             return None
 
-        if self.follow_line_directly:
-            if center_line is not None:
-                self.last_detected_lane = 1
-                self.last_target_pixel  = [
-                    int(center_line[2] + self.line_offset_px), center_line[3]]
-                self.waiting_cycles = 0
-            else:
-                self.waiting_cycles += 1
-            return self.last_target_pixel
-
-        half_w = self.dynamic_lane_half_width_px
-        bev_w  = self.bev_size[0]
+        bev_w = self.bev_size[0]
 
         if left_line is not None:
-            # Always follow yellow at a fixed distance.
-            target_x = left_line[2] + self.left_follow_offset_px
-            # Gray line as safety: prevent crossing too close to the right boundary.
-            if right_line is not None:
-                right_limit = right_line[2] - self.right_safety_margin_px
-                target_x = min(target_x, right_limit)
-            target_x = int(np.clip(target_x, 0, bev_w - 1))
-            self.last_detected_lane = 0.5
-            self.last_target_pixel  = [target_x, left_line[3]]
-            self.waiting_cycles     = 0
-
-        elif right_line is not None:
-            # Fallback: only right line visible — estimate center from the right boundary.
-            target_x = int(np.clip(right_line[2] - half_w, 0, bev_w - 1))
-            self.last_detected_lane = -0.75
-            self.last_target_pixel  = [target_x, right_line[3]]
+            target_x = int(np.clip(
+                left_line[2] + self.left_follow_offset_px, 0, bev_w - 1))
+            # Deadband: ignore sub-noise moves to suppress Hough jitter.
+            if (self.last_target_pixel is None or
+                    abs(target_x - self.last_target_pixel[0]) >= self.target_deadband_px):
+                self.last_target_pixel = [target_x, left_line[3]]
             self.waiting_cycles = 0
-
         else:
             self.waiting_cycles += 1
 
@@ -430,23 +455,17 @@ class LaneDetector(Node):
             #    a binary mask: no fragmentation at the far edge.
             bev_color = cv2.warpPerspective(pp, h_matrix, self.bev_size)
 
-            # 3. Colour segmentation in BEV space
-            hls_bev     = cv2.cvtColor(bev_color, cv2.COLOR_BGR2HLS)
-            white_mask  = self.color_segment(hls_bev, self.gray_lower,   self.gray_upper)
-            yellow_mask = self.color_segment(hls_bev, self.yellow_lower, self.yellow_upper)
-            white_filtered = self._remove_large_blobs(white_mask, self.white_max_blob_area)
-            bev_mask    = self._clean_mask(cv2.bitwise_or(white_filtered, yellow_mask))
+            # 3. Gray → bright threshold AND Canny → Hough input
+            bev_gray  = cv2.cvtColor(bev_color, cv2.COLOR_BGR2GRAY)
+            bev_blur  = cv2.GaussianBlur(bev_gray, (3, 3), 1.0)
+            _, bright_mask = cv2.threshold(bev_blur, self.bright_thresh, 255, cv2.THRESH_BINARY)
+            bev_edges = cv2.Canny(bev_blur, self.canny_low, self.canny_high)
+            hough_in  = cv2.bitwise_and(bright_mask, bev_edges)
+            # Spatial cutoff: burn artifact is at x≈90-130, real line at x<85.
+            hough_in[:, self.yellow_bev_max_x:] = 0
+            bev_mask  = bright_mask  # for visualization
 
-            # 4. Optional Canny on BEV grayscale AND-ed with BEV mask
-            if self.canny_low > 0 and self.canny_high > self.canny_low:
-                bev_gray  = cv2.cvtColor(bev_color, cv2.COLOR_BGR2GRAY)
-                bev_gray  = cv2.GaussianBlur(bev_gray, (5, 5), 1.4)
-                bev_edges = cv2.Canny(bev_gray, self.canny_low, self.canny_high)
-                hough_in  = cv2.bitwise_and(bev_edges, bev_mask)
-            else:
-                hough_in = bev_mask
-
-            # 6. Hough in BEV space
+            # 5. Hough in BEV space
             bev_h, bev_w = hough_in.shape[:2]
             lines = cv2.HoughLinesP(
                 hough_in, 1, np.pi / 180,
@@ -455,40 +474,17 @@ class LaneDetector(Node):
                 maxLineGap=self.hough_max_line_gap,
             )
 
-            # 7. Lane fitting (BEV-aware: classify by X, fit x = f(y))
-            left_line, right_line, center_line = self.lane_average_bev(bev_w, bev_h, lines)
+            # 6. Lane fitting — only yellow (left) line matters
+            left_line, _, _ = self.lane_average_bev(bev_w, bev_h, lines)
+            raw_target = self.select_target_pixel(left_line)
 
-            # Discard right line if width is physically impossible (misclassification / artifact).
-            if left_line is not None and right_line is not None:
-                lane_width = right_line[2] - left_line[2]
-                if lane_width < 40 or lane_width > 140:
-                    right_line = None
-                    center_line = None
-
-            self.update_lane_half_width(left_line, right_line)
-            raw_target = self.select_target_pixel(left_line, right_line, center_line)
-
-            if left_line is None:
-                self.get_logger().info("LEFT LOST")
-
-            if right_line is None:
-                self.get_logger().info("RIGHT LOST")
-
-            if left_line is not None and right_line is not None:
-                lane_width = right_line[2] - left_line[2]
-                self.get_logger().info(
-                    f"width={lane_width:.1f}px"
-    )
-
-            # Periodic debug log: shows what's detected and the estimated half-width.
+            # Periodic debug log (~every 2 s at 15 Hz).
             if self._frame_count % 30 == 0:
+                if left_line is None:
+                    self.get_logger().info("LEFT LOST")
                 lx = left_line[2]  if left_line  is not None else None
-                rx = right_line[2] if right_line is not None else None
                 tx = raw_target[0] if raw_target is not None else None
-                self.get_logger().info(
-                    f'[lane] L={lx} R={rx} target_x={tx} '
-                    f'half_w={self.dynamic_lane_half_width_px:.1f}'
-                )
+                self.get_logger().info(f'[lane] L={lx} target_x={tx}')
 
             target_px = raw_target
 
@@ -502,10 +498,9 @@ class LaneDetector(Node):
             self.target_point_pub.publish(target_msg)
 
             # 10. Lane lines message
-            msg_lines       = Float32MultiArray()
-            left_data  = [float(x) for x in left_line]  if left_line  else [-1.0] * 4
-            right_data = [float(x) for x in right_line] if right_line else [-1.0] * 4
-            msg_lines.data = left_data + right_data
+            msg_lines      = Float32MultiArray()
+            left_data      = [float(x) for x in left_line] if left_line else [-1.0] * 4
+            msg_lines.data = left_data + [-1.0] * 4
             self.lane_pub.publish(msg_lines)
 
             # 11. Visualization
@@ -514,23 +509,13 @@ class LaneDetector(Node):
             if not (self.enable_display or need_overlay):
                 return
 
-            # BEV overlay: draw detected lines and target
+            # BEV overlay: fitted line + target
             bev_bgr = cv2.cvtColor(bev_mask, cv2.COLOR_GRAY2BGR)
             if left_line is not None:
                 cv2.line(bev_bgr,
                          self._safe_pt(left_line[0],  left_line[1]),
                          self._safe_pt(left_line[2],  left_line[3]),
                          (255, 0, 0), 2)
-            if right_line is not None:
-                cv2.line(bev_bgr,
-                         self._safe_pt(right_line[0], right_line[1]),
-                         self._safe_pt(right_line[2], right_line[3]),
-                         (0, 0, 255), 2)
-            if center_line is not None:
-                cv2.line(bev_bgr,
-                         self._safe_pt(center_line[0], center_line[1]),
-                         self._safe_pt(center_line[2], center_line[3]),
-                         (0, 255, 0), 2)
             if target_px is not None:
                 cv2.circle(bev_bgr, self._safe_pt(target_px[0], target_px[1]),
                            5, (0, 255, 255), -1)
@@ -543,19 +528,15 @@ class LaneDetector(Node):
                 line_image = src.copy()
                 cv2.polylines(line_image, polygon, isClosed=True,
                               color=(255, 255, 0), thickness=1)
-                # Perspective masks computed only when needed for the overlay.
-                hls_persp         = cv2.cvtColor(pp, cv2.COLOR_BGR2HLS)
-                white_mask_persp  = self.color_segment(hls_persp, self.gray_lower,   self.gray_upper)
-                yellow_mask_persp = self.color_segment(hls_persp, self.yellow_lower, self.yellow_upper)
-
                 # Flip BEV for human readability (near at bottom, far at top)
                 bev_display = cv2.flip(bev_bgr, 0)
 
-                color_mask = np.zeros((h, w, 3), dtype=np.uint8)
-                color_mask[white_mask_persp  > 0] = (255, 255, 255)
-                color_mask[yellow_mask_persp > 0] = (0, 255, 255)
+                # Mask overlay: show hough_in (bright+edges) on perspective
+                gray_persp = cv2.cvtColor(pp, cv2.COLOR_BGR2GRAY)
+                _, bright_persp = cv2.threshold(gray_persp, self.bright_thresh, 255, cv2.THRESH_BINARY)
+                color_mask = cv2.cvtColor(bright_persp, cv2.COLOR_GRAY2BGR)
                 cv2.polylines(color_mask, polygon, isClosed=True,
-                              color=(255, 255, 0), thickness=1)
+                              color=(0, 255, 0), thickness=1)
 
                 self._publish_image(self.overlay_pub, line_image,  resize_to=self.overlay_size)
                 self._publish_image(self.bev_pub,     bev_display)

@@ -8,23 +8,26 @@ lane_follower_q:
     cmd_topic: /lane_follower/raw_cmd
 
     # --- Ackermann geometry ---
-    wheelbase: 0.256
+    wheelbase: 0.256   # meters (distance between axles)
 
     # --- Dynamic lookahead ---
     # 0.24 m: compromise between tighter turns (0.20) and stability (0.30)
     lookahead_min: 0.20
     lookahead_max: 0.40
-    lookahead_base: 0.24
+    lookahead_base: 0.22
     lookahead_speed_gain: 0.60
 
+
     # --- Steering limits ---
-    max_steering_angle: 0.31
-    curve_threshold: 0.20
+    max_steering_angle: 0.40
+    curve_threshold: 0.35
 
-    # --- Speed (curve MUST be <= straight) ---
-    speed_straight: 0.070
-    speed_curve:    0.065
+    # --- Speed ---
+    speed_straight: 0.060   # m/s on straight sections
+    speed_curve: 0.065      # m/s in curves
 
+    # Flip to +1.0 if the car steers in the wrong direction.
     steering_sign: -1.0
+
     # EMA filter on steering output: 0.0=raw, 0.5=moderate, 0.8=heavy smoothing
-    steering_lpf_alpha: 0.6
+    steering_lpf_alpha: 0.62

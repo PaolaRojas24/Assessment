@@ -39,9 +39,9 @@ import json
 
 
 # ── Dimensiones de la zona de seguridad frontal (trapezoide) ─────────────────
-OBS_DEPTH      = 0.16 * 2   # metros hacia el frente
+OBS_DEPTH      = 0.17 * 2   # metros hacia el frente
 OBS_WIDTH_NEAR = 0.10 * 2   # ancho cerca del QCar (base ancha del trapezoide)
-OBS_WIDTH_FAR  = 0.05 * 2   # ancho al frente, lejos (parte estrecha)
+OBS_WIDTH_FAR  = 0.08 * 2   # ancho al frente, lejos (parte estrecha)
 DEAD_ZONE_DEPTH = 0.1 * 2
 DEAD_ZONE_WIDTH = 0.18 * 2
 

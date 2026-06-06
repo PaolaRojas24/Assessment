@@ -12,6 +12,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from ament_index_python.packages import get_package_share_directory
 
 
@@ -27,7 +28,15 @@ def generate_launch_description():
     )
     initial_mode_arg = DeclareLaunchArgument(
         'initial_mode', default_value='auto',
-        description='Initial command_mux mode: auto / manual / off.',
+        description='Initial command_mux mode: auto / off.',
+    )
+    initial_source_arg = DeclareLaunchArgument(
+        'initial_source', default_value='lane',
+        description='Initial command_mux source: lane / overtake.',
+    )
+    max_speed_arg = DeclareLaunchArgument(
+        'max_speed', default_value='0.1',
+        description='Hard cap on |throttle| (m/s) enforced by the mux.',
     )
 
     lane_follower_node = Node(
@@ -45,12 +54,17 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'initial_mode': LaunchConfiguration('initial_mode'),
+            'initial_source': LaunchConfiguration('initial_source'),
+            'max_speed': ParameterValue(
+                LaunchConfiguration('max_speed'), value_type=float),
         }],
     )
 
     return LaunchDescription([
         follower_params_arg,
         initial_mode_arg,
+        initial_source_arg,
+        max_speed_arg,
         lane_follower_node,
         command_mux_node,
     ])
