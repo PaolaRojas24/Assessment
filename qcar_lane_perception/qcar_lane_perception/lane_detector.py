@@ -10,8 +10,7 @@ Pipeline:
   6. HoughLinesP in BEV space (lines are straight/near-straight)
   7. Classify lines by X position (left half / right half of BEV)
   8. Fit x = f(y) per lane (robust for near-vertical lines)
-  9. Kalman smoothing of target pixel (BEV coords)
- 10. Direct BEV-pixel → metric conversion (no perspectiveTransform on target)
+  9. Direct BEV-pixel → metric conversion (no perspectiveTransform on target)
 """
 
 import rclpy

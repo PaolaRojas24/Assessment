@@ -11,7 +11,7 @@ lane_follower_q:
     wheelbase: 0.256   # meters (distance between axles)
 
     # --- Dynamic lookahead ---
-    # 0.24 m: compromise between tighter turns (0.20) and stability (0.30)
+    # 0.22 m: compromise between tighter turns (0.20) and stability (0.30)
     lookahead_min: 0.18
     lookahead_max: 0.42
     lookahead_base: 0.22
