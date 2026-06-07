@@ -87,8 +87,8 @@ class LaneFollowerQ(Node):
             return
 
         # En recta (error pequeño) suaviza más; en curva responde rápido.
-        #a = self.steering_lpf_alpha if abs(target_x) < 0.03 else 0.30
-        a = self.steering_lpf_alpha
+        a = self.steering_lpf_alpha if abs(target_x) < 0.03 else 0.45
+        #a = self.steering_lpf_alpha
         self.target_x_f = a * self.target_x_f + (1.0 - a) * target_x
         
         if abs(target_x) < 0.03:

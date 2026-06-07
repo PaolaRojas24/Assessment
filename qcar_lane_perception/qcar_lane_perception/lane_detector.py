@@ -78,7 +78,7 @@ class LaneDetector(Node):
         self.follow_line_directly        = True
         # Fixed pixel offset from the detected line (follow_line_directly only).
         # Positive = right of line, negative = left. 500 px/m → 25 px = 5 cm.
-        self.line_offset_px              = 10    # compensación mínima offset BEV (~1cm)
+        self.line_offset_px              = 20    # compensación mínima offset BEV (~1cm)
         self.lane_half_width_px         = 70.0
         self.lane_half_width_ema_alpha   = 0.2
         self.dynamic_lane_half_width_px  = self.lane_half_width_px
@@ -89,7 +89,7 @@ class LaneDetector(Node):
         self.hough_threshold       = 10
         self.hough_min_line_length = 8
         self.hough_max_line_gap    = 8
-        self.hough_x_max_px        = 120  # ignora detecciones a la derecha de este px
+        self.hough_x_max_px        = 130  # ignora detecciones a la derecha de este px
 
         # ---- Preprocess ----
         self.wb_enable  = True
