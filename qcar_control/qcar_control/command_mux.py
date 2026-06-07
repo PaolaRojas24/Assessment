@@ -62,6 +62,11 @@ class CommandMux(Node):
         self.declare_parameter('initial_mode',      'auto')
         self.declare_parameter('initial_source',    'lane')
         self.declare_parameter('max_speed',          0.1)   # m/s, hard cap
+        # Si source='overtake' pero no llega comando fresco en este tiempo,
+        # el mux reenvía el seguidor de línea (auto-recuperación si el
+        # supervisor muere o se queda colgado). Evita que el mux se quede
+        # "pegado" en overtake con un comando viejo.
+        self.declare_parameter('overtake_timeout',   0.5)   # s
 
         auto_in     = self.get_parameter('auto_in_topic').value
         overtake_in = self.get_parameter('overtake_in_topic').value
@@ -74,6 +79,7 @@ class CommandMux(Node):
         init_mode   = str(self.get_parameter('initial_mode').value).lower()
         init_source = str(self.get_parameter('initial_source').value).lower()
         self._max_speed = abs(float(self.get_parameter('max_speed').value))
+        self._overtake_to = float(self.get_parameter('overtake_timeout').value)
 
         if init_mode not in VALID_MODES:
             self.get_logger().warn(
@@ -91,6 +97,8 @@ class CommandMux(Node):
 
         self._latest_auto_cmd = None
         self._latest_overtake_cmd = None
+        self._last_overtake_t = None
+        self._overtake_stale_warned = False
         self._obstacle = False
         self._safe_stop = False
 
@@ -120,6 +128,8 @@ class CommandMux(Node):
 
     def _on_overtake(self, msg: Vector3Stamped):
         self._latest_overtake_cmd = msg
+        self._last_overtake_t = self.get_clock().now()
+        self._overtake_stale_warned = False
 
     def _on_obstacle(self, msg: Bool):
         was = self._obstacle
@@ -188,8 +198,21 @@ class CommandMux(Node):
             return
 
         # 3. forward the active source's latest command, speed-clamped.
+        #    Watchdog: if 'overtake' is selected but no fresh overtake command
+        #    arrived recently (supervisor dead/stalled), fall back to the lane
+        #    follower so control isn't stuck on a stale overtake command.
         if self._source == 'overtake':
-            src = self._latest_overtake_cmd
+            fresh = (self._last_overtake_t is not None and
+                     (self.get_clock().now() - self._last_overtake_t).nanoseconds * 1e-9
+                     <= self._overtake_to)
+            if fresh:
+                src = self._latest_overtake_cmd
+            else:
+                src = self._latest_auto_cmd
+                if not self._overtake_stale_warned:
+                    self.get_logger().warn(
+                        'overtake source stale -- falling back to lane follower')
+                    self._overtake_stale_warned = True
         else:
             src = self._latest_auto_cmd
 
