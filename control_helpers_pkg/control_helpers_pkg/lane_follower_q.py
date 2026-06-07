@@ -13,9 +13,9 @@ class LaneFollowerQ(Node):
         self.declare_parameter('target_point_topic', '/lane_target_point_m')
         self.declare_parameter('cmd_topic', '/qcar2_motor_speed_cmd')
         self.declare_parameter('wheelbase', 0.256)
-        self.declare_parameter('lookahead_min', 0.25)
-        self.declare_parameter('lookahead_max', 0.40)
-        self.declare_parameter('lookahead_base', 0.30)
+        self.declare_parameter('lookahead_min', 0.18)
+        self.declare_parameter('lookahead_max', 0.42)
+        self.declare_parameter('lookahead_base', 0.22)
         self.declare_parameter('lookahead_speed_gain', 0.80)
         self.declare_parameter('max_steering_angle', 0.5)
         self.declare_parameter('curve_threshold', 0.2)
@@ -43,7 +43,7 @@ class LaneFollowerQ(Node):
         self.steering_lpf_alpha = float(self.get_parameter('steering_lpf_alpha').value)
 
         self.last_speed_command = 0.0
-        self._steering_filtered = 0.0
+        self.target_x_f = 0.0
 
         self.subscription = self.create_subscription(
             Float32MultiArray, target_topic, self.target_callback, 10)
@@ -86,24 +86,25 @@ class LaneFollowerQ(Node):
             self.publish_stop()
             return
 
-        # Raw geometric distance from rear axle to the selected target point.
-        lookahead_raw = math.hypot(target_x, target_y)
-        lookahead_speed = self.clamp(
-            self.lookahead_base + self.lookahead_speed_gain * abs(self.last_speed_command),
-            self.lookahead_min,
-            self.lookahead_max,
-        )
-        lookahead = self.clamp(min(lookahead_raw, lookahead_speed), self.lookahead_min, self.lookahead_max)
+        # En recta (error pequeño) suaviza más; en curva responde rápido.
+        #a = self.steering_lpf_alpha if abs(target_x) < 0.03 else 0.30
+        a = self.steering_lpf_alpha
+        self.target_x_f = a * self.target_x_f + (1.0 - a) * target_x
+        
+        if abs(target_x) < 0.03:
+            lookahead = 0.35
+        elif abs(target_x) < 0.06:
+            lookahead = 0.28
+        else:
+            lookahead = 0.22
 
-        # Pure Pursuit using rear-axle frame: x lateral, y forward.
-        steering_angle = math.atan2(2.0 * self.wheelbase * target_x, lookahead * lookahead)
+        steering_angle = math.atan2(
+            2.0 * self.wheelbase * self.target_x_f,
+            lookahead * lookahead
+        )
         steering_angle = self.clamp(steering_angle, -self.max_steering_angle, self.max_steering_angle)
 
-        # EMA low-pass filter — smooths abrupt changes from noisy detections.
-        a = self.steering_lpf_alpha
-        self._steering_filtered = a * self._steering_filtered + (1.0 - a) * steering_angle
-
-        if abs(self._steering_filtered) > self.curve_threshold:
+        if abs(steering_angle) > self.curve_threshold:
             speed = self.speed_curve
         else:
             speed = self.speed_straight
@@ -112,16 +113,14 @@ class LaneFollowerQ(Node):
             cmd = Vector3Stamped()
             cmd.header.stamp = self.get_clock().now().to_msg()
             cmd.vector.x = speed
-            cmd.vector.y = self.steering_sign * self._steering_filtered
+            cmd.vector.y = self.steering_sign * steering_angle
             self.cmd_pub.publish(cmd)
             self.last_speed_command = speed
         elif self.platform == 'qcar2':
             cmd = MotorCommands()
             cmd.motor_names = ["steering_angle", "motor_throttle"]
-            # cmd.values = [self.steering_sign * steering_angle, speed]
-            cmd.values = [self.steering_sign * self._steering_filtered,speed]
+            cmd.values = [self.steering_sign * steering_angle, speed]
             self.cmd_pub.publish(cmd)
-
             self.last_speed_command = speed
 
 def main(args=None):
