@@ -23,7 +23,7 @@ lane_follower_q:
     curve_threshold: 0.30
 
     # --- Speed ---
-    speed_straight: 0.070   # m/s on straight sections
+    speed_straight: 0.065   # m/s on straight sections
     speed_curve: 0.060    # m/s in curves
 
     # Flip to +1.0 if the car steers in the wrong direction.

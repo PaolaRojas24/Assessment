@@ -1,4 +1,8 @@
-Panels: []
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
 
 Visualization Manager:
   Class: ""
@@ -99,7 +103,5 @@ Visualization Manager:
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
 Window Geometry:
-  X: 100
-  Y: 50
-  Height: 400
-  Width: 600
+  Height: 720
+  Width: 1280

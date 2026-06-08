@@ -71,7 +71,7 @@ class ObstacleDodge(Node):
         # tiempo (a v_dodge) antes de soltar al seguidor. - = derecha (para
         # este coche, ya que rodea izquierda con steer +). 0 = sin recuperación.
         self.declare_parameter('recovery_steer', -0.3)
-        self.declare_parameter('recovery_time',   1.1)
+        self.declare_parameter('recovery_time',   0.8)
 
         # Lidar / frame.
         self.declare_parameter('front_angle_deg', -90.0)

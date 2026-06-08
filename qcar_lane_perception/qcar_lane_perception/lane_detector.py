@@ -77,7 +77,7 @@ class LaneDetector(Node):
         self.follow_line_directly        = True
         # Fixed pixel offset from the detected line (follow_line_directly only).
         # Positive = right of line, negative = left. 500 px/m → 25 px = 5 cm.
-        self.line_offset_px              = 20    # compensación mínima offset BEV (~1cm)
+        self.line_offset_px              = 40    # compensación mínima offset BEV (~1cm)
         self.lane_half_width_px         = 70.0
         self.lane_half_width_ema_alpha   = 0.2
         self.dynamic_lane_half_width_px  = self.lane_half_width_px
@@ -119,7 +119,7 @@ class LaneDetector(Node):
         # ---- Target-selection state ----
         self.last_detected_lane = 1
         self.last_target_pixel  = None
-        self.max_waiting_cycles = 150   # ~3s @ 15Hz antes de publicar stop
+        self.max_waiting_cycles = 15000   # ~3s @ 15Hz antes de publicar stop
         self.waiting_cycles     = 0
         self._frame_count       = 0
 
