@@ -19,7 +19,7 @@ lane_follower_q:
 
 
     # --- Steering limits ---
-    max_steering_angle: 0.40
+    max_steering_angle: 0.30   # tope físico real de la dirección del QCar (±0.3 rad)
     curve_threshold: 0.30
 
     # --- Speed ---

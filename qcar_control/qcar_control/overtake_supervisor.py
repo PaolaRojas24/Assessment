@@ -77,8 +77,16 @@ class OvertakeSupervisor(Node):
         self.declare_parameter('near_x',        0.77)   # inicio zona de decisión
         self.declare_parameter('far_x',         1.07)   # fin zona de decisión
         self.declare_parameter('min_obj_pts',   2)
-        self.declare_parameter('side_check_len', 0.90)  # largo corredor de paso (cubre el obstáculo)
+        self.declare_parameter('side_check_len', 1.00)  # zona verde: extensión hacia adelante
+        self.declare_parameter('side_back',     0.25)   # zona verde: extensión hacia atrás (cola)
+        self.declare_parameter('side_outer',    0.45)   # zona verde: borde lateral externo
         self.declare_parameter('beside_len',    0.30)   # ventana |x| para "al costado"
+        # Trapecio de activación: ancho cerca, se estrecha lejos (rechaza pared en curva).
+        self.declare_parameter('trap_half_near', 0.125)
+        self.declare_parameter('trap_half_far',  0.08)
+        # Lado de rebase: 'left' / 'right' (fijo, robusto al meneo del seguidor)
+        # o 'auto' (opuesto al objeto, pero sensible a la oscilación).
+        self.declare_parameter('pass_side_mode', 'left')
 
         # ── Montaje del lidar ─────────────────────────────────────────────────
         # front_angle_deg: dirección del FRENTE del robot en el frame del scan
@@ -108,7 +116,7 @@ class OvertakeSupervisor(Node):
         self.declare_parameter('steering_sign', -1.0)  # igual que el lane follower
         self.declare_parameter('yaw_sign',       1.0)  # -1 si Δθ va al revés
         self.declare_parameter('eps_n',          0.04)
-        self.declare_parameter('v_overtake',     0.10)
+        self.declare_parameter('v_overtake',     0.075)
         self.declare_parameter('ramp_time',      1.5)
         self.declare_parameter('maneuver_max_steer', 0.40)  # δm de maniobra (equilibrio)
         # SHIFT_OUT por YAW (sin distancia): gira turn_steer hacia el lado hasta
@@ -135,7 +143,12 @@ class OvertakeSupervisor(Node):
         self.car_half   = float(g('car_half'))
         self.min_pts    = int(g('min_obj_pts'))
         self.side_len   = float(g('side_check_len'))
+        self.side_back  = float(g('side_back'))
+        self.side_outer = float(g('side_outer'))
         self.beside_len = float(g('beside_len'))
+        self.trap_hn    = float(g('trap_half_near'))
+        self.trap_hf    = float(g('trap_half_far'))
+        self.pass_mode  = str(g('pass_side_mode')).lower()
         self._front     = math.radians(float(g('front_angle_deg')))
         self._cf        = math.cos(self._front)
         self._sf        = math.sin(self._front)
@@ -279,13 +292,21 @@ class OvertakeSupervisor(Node):
         return pts
 
     # ── Zonas ───────────────────────────────────────────────────────────────────
+    def _half_at(self, x):
+        """Medio ancho del TRAPECIO de detección a distancia x: ancho cerca
+        (trap_hn) que se estrecha lejos (trap_hf). La pared en curva queda
+        off-axis y cae fuera del estrechamiento -> no dispara falso."""
+        t = (x - self.dead_x) / max(1e-3, (self.far_x - self.dead_x))
+        t = min(max(t, 0.0), 1.0)
+        return self.trap_hn + (self.trap_hf - self.trap_hn) * t
+
     def _detect(self, x_lo, x_hi, pts):
-        """Detecta objeto en el corredor frontal [x_lo, x_hi].
+        """Detecta objeto en el corredor-TRAPECIO frontal [x_lo, x_hi].
 
         Devuelve (present, d, w, c_lat, c_fwd, sel_points).
         """
-        half = self.lane_w / 2.0
-        sel = [(f, l) for (f, l) in pts if x_lo < f <= x_hi and abs(l) <= half]
+        sel = [(f, l) for (f, l) in pts
+               if x_lo < f <= x_hi and abs(l) <= self._half_at(f)]
         if len(sel) < self.min_pts:
             return False, None, None, None, None, []
         d = min(f for f, _ in sel)
@@ -296,27 +317,34 @@ class OvertakeSupervisor(Node):
         return True, d, w, c_lat, c_fwd, sel
 
     def _side_free(self, side, pts):
-        """¿Está libre la HUELLA DESTINO del lado `side` (+1 izq, -1 der)?
+        """¿Está libre el carril contiguo del lado `side` (+1 izq, -1 der)?
 
-        Es la banda donde quedará el coche tras correrse n_paso: centro en
-        n_paso, medio ancho car_half, a lo largo desde el morro (d_lf).
+        Zona grande que cubre TODO el lateral: desde la cola (-side_back) hasta
+        adelante (side_len), banda lateral del coche (car_half) al borde externo
+        (side_outer).
         """
-        y_lo = self.n_paso - self.car_half
-        y_hi = self.n_paso + self.car_half
+        y_lo = self.car_half
+        y_hi = self.side_outer
         for (f, l) in pts:
-            if self.d_lf <= f <= self.d_lf + self.side_len and y_lo <= l * side <= y_hi:
+            if -self.side_back <= f <= self.side_len and y_lo <= l * side <= y_hi:
                 return False
         return True
 
     def _choose_side(self, pts, object_side):
-        """Lado LIBRE, preferentemente el OPUESTO a donde está el objeto.
+        """Lado de rebase. Devuelve +1 (izq) / -1 (der) / 0 (no se puede).
 
-        object_side: +1 objeto a la izq, -1 a la der, 0 centrado.
-        Devuelve +1/-1 (lado de paso) o 0 si ninguno libre.
+        pass_side_mode='left'/'right' => lado FIJO si está libre (robusto al
+        meneo del seguidor). 'auto' => lado libre opuesto al objeto.
         """
         free_l = self._side_free(+1, pts)
         free_r = self._side_free(-1, pts)
-        prefer = -object_side if object_side != 0 else +1   # opuesto al objeto
+        # Lado fijo (simplifica y evita el flip por la oscilación del seguidor).
+        if self.pass_mode == 'left':
+            return +1 if free_l else 0
+        if self.pass_mode == 'right':
+            return -1 if free_r else 0
+        # auto: opuesto al objeto.
+        prefer = -object_side if object_side != 0 else +1
         if prefer == +1 and free_l:
             return +1
         if prefer == -1 and free_r:
@@ -631,43 +659,81 @@ class OvertakeSupervisor(Node):
         m.color.r, m.color.g, m.color.b, m.color.a = rgba
         return m
 
+    def _strip(self, stamp, mid, ns, pts2d, rgba, width=0.012):
+        m = Marker()
+        m.header.frame_id = self._mk_child
+        m.header.stamp = stamp
+        m.ns = ns
+        m.id = mid
+        m.type = Marker.LINE_STRIP
+        m.action = Marker.ADD
+        m.pose.orientation.w = 1.0
+        m.scale.x = float(width)
+        m.color.r, m.color.g, m.color.b, m.color.a = rgba
+        m.points = [Point(x=float(x), y=float(y), z=0.0) for (x, y) in pts2d]
+        return m
+
+    def _text(self, stamp, mid, ns, x, y, text, rgba=(1.0, 1.0, 1.0, 0.9), h=0.08):
+        m = Marker()
+        m.header.frame_id = self._mk_child
+        m.header.stamp = stamp
+        m.ns = ns
+        m.id = mid
+        m.type = Marker.TEXT_VIEW_FACING
+        m.action = Marker.ADD
+        m.pose.position.x = float(x)
+        m.pose.position.y = float(y)
+        m.pose.position.z = 0.15
+        m.pose.orientation.w = 1.0
+        m.scale.z = float(h)
+        m.color.r, m.color.g, m.color.b, m.color.a = rgba
+        m.text = text
+        return m
+
     def _publish_overlay(self, pts):
         stamp = self.get_clock().now().to_msg()
         arr = MarkerArray()
 
-        # Z0 emergencia (debug) — rojo.
+        # Emergencia (debug) — rojo.
         arr.markers.append(self._box(
             stamp, 0, 'z0_emergency', cx=self.emerg_d / 2.0, cy=0.0,
             sx=self.emerg_d, sy=self.emerg_w, rgba=(0.9, 0.1, 0.1, 0.15)))
-        # Z1 lejana — amarillo.
-        arr.markers.append(self._box(
-            stamp, 1, 'z1_far', cx=(self.near_x + self.far_x) / 2.0, cy=0.0,
-            sx=self.far_x - self.near_x, sy=self.lane_w, rgba=(1.0, 0.9, 0.1, 0.15)))
-        # Z2 cercana — naranja.
-        arr.markers.append(self._box(
-            stamp, 2, 'z2_near', cx=(self.dead_x + self.near_x) / 2.0, cy=0.0,
-            sx=self.near_x - self.dead_x, sy=self.lane_w, rgba=(1.0, 0.5, 0.1, 0.25)))
-        # Z4 corredores de paso (huella destino) — verde libre / rojo bloqueado.
+
+        # Activación: TRAPECIO [near_x, far_x] (ancho cerca, estrecho lejos) — amarillo.
+        hn = self._half_at(self.near_x)
+        hf = self._half_at(self.far_x)
+        trap = [(self.near_x, +hn), (self.far_x, +hf),
+                (self.far_x, -hf), (self.near_x, -hn), (self.near_x, +hn)]
+        arr.markers.append(self._strip(stamp, 1, 'activation_trap', trap,
+                                       rgba=(1.0, 0.9, 0.1, 0.95)))
+
+        # Zona verde lateral (grande): de la cola hacia adelante, carril contiguo.
         free_l = self._side_free(+1, pts)
         free_r = self._side_free(-1, pts)
-        cx_side = self.d_lf + self.side_len / 2.0
-        sy_side = 2.0 * self.car_half
+        cx_side = (self.side_len - self.side_back) / 2.0
+        sx_side = self.side_len + self.side_back
+        cy_side = (self.car_half + self.side_outer) / 2.0
+        sy_side = self.side_outer - self.car_half
         arr.markers.append(self._box(
-            stamp, 3, 'z4_left', cx=cx_side, cy=+self.n_paso,
-            sx=self.side_len, sy=sy_side,
-            rgba=(0.1, 0.8, 0.1, 0.25) if free_l else (0.9, 0.1, 0.1, 0.25)))
+            stamp, 2, 'side_left', cx=cx_side, cy=+cy_side, sx=sx_side, sy=sy_side,
+            rgba=(0.1, 0.8, 0.1, 0.22) if free_l else (0.9, 0.1, 0.1, 0.22)))
         arr.markers.append(self._box(
-            stamp, 4, 'z4_right', cx=cx_side, cy=-self.n_paso,
-            sx=self.side_len, sy=sy_side,
-            rgba=(0.1, 0.8, 0.1, 0.25) if free_r else (0.9, 0.1, 0.1, 0.25)))
+            stamp, 3, 'side_right', cx=cx_side, cy=-cy_side, sx=sx_side, sy=sy_side,
+            rgba=(0.1, 0.8, 0.1, 0.22) if free_r else (0.9, 0.1, 0.1, 0.22)))
 
-        # Puntos del objeto (Z1+Z2) — esferas rojas.
+        # Etiquetas IZQ/DER para VERIFICAR el signo físico en RViz.
+        arr.markers.append(self._text(stamp, 4, 'lbl_left',  cx_side, +cy_side,
+                                      'IZQ (+y)', rgba=(0.6, 1.0, 0.6, 1.0)))
+        arr.markers.append(self._text(stamp, 5, 'lbl_right', cx_side, -cy_side,
+                                      'DER (-y)', rgba=(1.0, 0.7, 0.6, 1.0)))
+
+        # Puntos del objeto (trapecio) — esferas rojas.
         present, d, w, c_lat, c_fwd, sel = self._detect(self.dead_x, self.far_x, pts)
         mp = Marker()
         mp.header.frame_id = self._mk_child
         mp.header.stamp = stamp
         mp.ns = 'obstacle_pts'
-        mp.id = 5
+        mp.id = 6
         mp.type = Marker.SPHERE_LIST
         mp.action = Marker.ADD if present else Marker.DELETE
         mp.scale.x = mp.scale.y = mp.scale.z = 0.03
@@ -676,12 +742,12 @@ class OvertakeSupervisor(Node):
         mp.pose.orientation.w = 1.0
         arr.markers.append(mp)
 
-        # Z3 centroide del objeto — esfera magenta.
+        # Centroide del objeto — esfera magenta.
         mc = Marker()
         mc.header.frame_id = self._mk_child
         mc.header.stamp = stamp
-        mc.ns = 'z3_centroid'
-        mc.id = 6
+        mc.ns = 'centroid'
+        mc.id = 7
         mc.type = Marker.SPHERE
         mc.action = Marker.ADD if present else Marker.DELETE
         if present:
@@ -693,26 +759,15 @@ class OvertakeSupervisor(Node):
         mc.color.r, mc.color.g, mc.color.b, mc.color.a = (1.0, 0.0, 1.0, 0.9)
         arr.markers.append(mc)
 
-        # Texto.
-        mt = Marker()
-        mt.header.frame_id = self._mk_child
-        mt.header.stamp = stamp
-        mt.ns = 'txt'
-        mt.id = 7
-        mt.type = Marker.TEXT_VIEW_FACING
-        mt.action = Marker.ADD
-        mt.pose.position.x = self.far_x
-        mt.pose.position.y = 0.0
-        mt.pose.position.z = 0.15
-        mt.pose.orientation.w = 1.0
-        mt.scale.z = 0.07
-        mt.color.r, mt.color.g, mt.color.b, mt.color.a = (1.0, 1.0, 1.0, 0.9)
+        # Texto de estado + lado ELEGIDO (para ver si esquiva al lado correcto).
+        txt = self._state.name
+        if self._pass_side > 0:
+            txt += ' -> paso IZQ'
+        elif self._pass_side < 0:
+            txt += ' -> paso DER'
         if present:
-            objs = 'IZQ' if c_lat > 0 else 'DER'
-            mt.text = f'{self._state.name} obj@{objs} d={d:.2f}'
-        else:
-            mt.text = self._state.name
-        arr.markers.append(mt)
+            txt += f' | obj@{"IZQ" if c_lat > 0 else "DER"} d={d:.2f}'
+        arr.markers.append(self._text(stamp, 8, 'state', self.far_x + 0.10, 0.0, txt))
 
         self._pub_markers.publish(arr)
 

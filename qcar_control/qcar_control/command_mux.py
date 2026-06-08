@@ -47,6 +47,10 @@ VALID_MODES = ('auto', 'off')
 VALID_SOURCES = ('lane', 'overtake')
 
 
+STEER_GAIN_YPOS = 1.6  #  derecha
+STEER_GAIN_YNEG = 1.0   # izquierda (reforzada)
+
+
 class CommandMux(Node):
     def __init__(self):
         super().__init__('command_mux')
@@ -181,8 +185,13 @@ class CommandMux(Node):
         out.header.stamp = self.get_clock().now().to_msg()
         out.header.frame_id = 'command_mux'
 
-        # 1. safety overrides
-        if self._safe_stop or self._obstacle:
+        # 1. safety overrides.
+        #    El paro de emergencia del lidar (obstacle) se SUPRIME mientras la
+        #    fuente activa es 'overtake': en ese modo la maniobra de evasión ES
+        #    la respuesta al obstáculo, así que frenar en seco la congelaría.
+        #    El safe_stop del dashboard SIEMPRE para.
+        emergency = self._obstacle and self._source != 'overtake'
+        if self._safe_stop or emergency:
             out.vector.x = 0.0
             out.vector.y = 0.0
             out.vector.z = 0.0
@@ -222,7 +231,9 @@ class CommandMux(Node):
             out.vector.y = 0.0
         else:
             out.vector.x = self._clamp_speed(float(src.vector.x))
-            out.vector.y = float(src.vector.y)
+            y = float(src.vector.y)
+            y *= STEER_GAIN_YPOS if y > 0.0 else STEER_GAIN_YNEG
+            out.vector.y = y
         out.vector.z = 0.0
         self.pub.publish(out)
 

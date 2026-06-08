@@ -119,7 +119,7 @@ class LaneDetector(Node):
         # ---- Target-selection state ----
         self.last_detected_lane = 1
         self.last_target_pixel  = None
-        self.max_waiting_cycles = 45   # ~3s @ 15Hz antes de publicar stop
+        self.max_waiting_cycles = 150  # ~10s @ 15Hz antes de publicar stop
         self.waiting_cycles     = 0
         self._frame_count       = 0
 
