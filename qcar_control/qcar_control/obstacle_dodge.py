@@ -36,9 +36,10 @@ from tf2_ros import StaticTransformBroadcaster
 
 
 class S(Enum):
-    IDLE  = auto()   # seguidor de línea; vigila el cono
-    ROUND = auto()   # rodea el objeto (reactivo por lidar)
-    DONE  = auto()   # suelta al seguidor (cámara recupera)
+    IDLE   = auto()   # seguidor de línea; vigila el cono
+    ROUND  = auto()   # rodea el objeto (reactivo por lidar)
+    RETURN = auto()   # giro fijo breve de recuperación tras pasar
+    DONE   = auto()   # suelta al seguidor (cámara recupera)
 
 
 class ObstacleDodge(Node):
@@ -56,16 +57,21 @@ class ObstacleDodge(Node):
         self.declare_parameter('trigger_dist',  0.48)   # m DESDE EL MORRO para disparar
         self.declare_parameter('min_pts',       2)
         self.declare_parameter('confirm_cycles', 3)
-        self.declare_parameter('clear_cycles',   4)     # ciclos sin objeto = pasado
+        self.declare_parameter('clear_cycles',   2)     # ciclos sin objeto = pasado
 
         # Rodeo (reactivo).
-        self.declare_parameter('pass_side',    1)       # +1 izq, -1 der
-        self.declare_parameter('margin',       0.06)    # holgura extra al borde del objeto
+        self.declare_parameter('pass_side',    -1)       # +1 izq, -1 der
+        self.declare_parameter('margin',       0.02)    # holgura extra al borde del objeto
         self.declare_parameter('kp_steer',     1.2)     # ganancia dir = kp * rumbo_al_hueco
         self.declare_parameter('max_steer',    0.30)    # tope físico de la dirección
         self.declare_parameter('steering_sign', -1.0)   # igual que el lane follower
         self.declare_parameter('v_dodge',      0.075)
         self.declare_parameter('maneuver_timeout', 12.0)
+        # Recuperación: tras pasar el objeto, gira fijo este steer por este
+        # tiempo (a v_dodge) antes de soltar al seguidor. - = derecha (para
+        # este coche, ya que rodea izquierda con steer +). 0 = sin recuperación.
+        self.declare_parameter('recovery_steer', -0.3)
+        self.declare_parameter('recovery_time',   1.1)
 
         # Lidar / frame.
         self.declare_parameter('front_angle_deg', -90.0)
@@ -90,6 +96,8 @@ class ObstacleDodge(Node):
         self.steer_sign = float(g('steering_sign'))
         self.v_dodge    = float(g('v_dodge'))
         self.man_to     = float(g('maneuver_timeout'))
+        self.rec_steer  = float(g('recovery_steer'))
+        self.rec_time   = float(g('recovery_time'))
         self._front     = math.radians(float(g('front_angle_deg')))
         self._cf, self._sf = math.cos(self._front), math.sin(self._front)
         self._scan_frame = str(g('scan_frame'))
@@ -105,6 +113,7 @@ class ObstacleDodge(Node):
         self._count = 0
         self._clear = 0
         self._t_start = None
+        self._rec_t0 = None         # inicio de la fase de recuperación
         self._aim = None            # (fwd, lat) punto al que apunta (para viz)
         self._last_steer = 0.0
 
@@ -215,7 +224,7 @@ class ObstacleDodge(Node):
     # ── Loop ─────────────────────────────────────────────────────────────────
     def _loop(self):
         now = self.get_clock().now()
-        in_maneuver = self._state == S.ROUND
+        in_maneuver = self._state in (S.ROUND, S.RETURN)
         if in_maneuver and self._t_start is not None and \
                 (now - self._t_start).nanoseconds * 1e-9 > self.man_to:
             self.get_logger().warn('TIMEOUT -> suelto al seguidor')
@@ -247,8 +256,15 @@ class ObstacleDodge(Node):
                 self._clear += 1
                 self._cmd(self.v_dodge, 0.0)
                 if self._clear >= self.clear_n:
-                    self.get_logger().info('objeto pasado -> suelto al seguidor (cámara recupera)')
-                    self._release()
+                    if self.rec_time > 0.0:
+                        self.get_logger().info(
+                            f'objeto pasado -> recuperación (steer={self.rec_steer} '
+                            f'{self.rec_time}s)')
+                        self._rec_t0 = now
+                        self._go(S.RETURN)
+                    else:
+                        self.get_logger().info('objeto pasado -> suelto al seguidor')
+                        self._release()
                 return
             self._clear = 0
             aim_fwd, aim_lat = self._round_target(sel)
@@ -258,6 +274,14 @@ class ObstacleDodge(Node):
                                           min(self.max_steer, self.kp_steer * bearing))
             self._cmd(self.v_dodge, steer)
             self._log(d, aim_lat, bearing, steer)
+
+        elif self._state == S.RETURN:
+            elapsed = (now - self._rec_t0).nanoseconds * 1e-9
+            if elapsed >= self.rec_time:
+                self.get_logger().info('recuperación lista -> suelto al seguidor')
+                self._release()
+            else:
+                self._cmd(self.v_dodge, self.rec_steer)
 
         elif self._state == S.DONE:
             self._src('lane')
